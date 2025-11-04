@@ -1,0 +1,17 @@
+name: fed-audit-gan
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pytorch>=1.12.0
+  - torchvision>=0.13.0
+  - torchaudio>=0.12.0
+  - pytorch-cuda=11.6
+  - numpy>=1.22.4
+  - matplotlib>=3.5.2
+  - pip
+  - pip:
+    - tqdm>=4.64.0
+    - wandb>=0.12.19
