@@ -1,14 +1,311 @@
 """
-Fairness Probe Generator
-=========================
-Autoencoder-style generator that creates counterfactual fairness probes.
-Takes input sample x and outputs modified sample x' that differs only in sensitive attributes.
+DCGAN Generator for Fed-AuditGAN
+=================================
+Generates synthetic data for fairness auditing using Deep Convolutional GAN architecture.
+Implements conditional generation for creating targeted fairness probes.
 """
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
+from typing import Tuple, Optional
+import logging
+import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
+class Generator(nn.Module):
+    """
+    DCGAN Generator network for creating high-quality synthetic samples.
+    Conditioned on class labels for controlled generation.
+    Uses convolutional layers for better image quality.
+    """
+    
+    def __init__(self, latent_dim: int = 100, num_classes: int = 10, img_shape: Tuple[int, int, int] = (1, 28, 28)):
+        super(Generator, self).__init__()
+        
+        self.latent_dim = latent_dim
+        self.num_classes = num_classes
+        self.img_shape = img_shape
+        self.channels = img_shape[0]
+        
+        # Label embedding
+        self.label_emb = nn.Embedding(num_classes, latent_dim)
+        
+        # Calculate initial size for deconvolution
+        self.init_size = img_shape[1] // 4  # For 28x28 -> 7, for 32x32 -> 8
+        
+        # First linear layer to get to initial feature map size
+        self.l1 = nn.Sequential(
+            nn.Linear(latent_dim * 2, 128 * self.init_size ** 2)
+        )
+        
+        # Convolutional blocks for upsampling
+        self.conv_blocks = nn.Sequential(
+            nn.BatchNorm2d(128),
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(128, 128, 3, stride=1, padding=1),
+            nn.BatchNorm2d(128, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Upsample(scale_factor=2),
+            nn.Conv2d(128, 64, 3, stride=1, padding=1),
+            nn.BatchNorm2d(64, 0.8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(64, self.channels, 3, stride=1, padding=1),
+            nn.Tanh(),
+        )
+        
+    def forward(self, noise: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """
+        Generate synthetic samples
+        
+        Args:
+            noise: Random noise vector [batch_size, latent_dim]
+            labels: Class labels [batch_size]
+            
+        Returns:
+            Generated images [batch_size, *img_shape]
+        """
+        # Embed labels and concatenate with noise
+        label_input = self.label_emb(labels)
+        gen_input = torch.cat([noise, label_input], dim=1)
+        
+        # Project and reshape
+        out = self.l1(gen_input)
+        out = out.view(out.shape[0], 128, self.init_size, self.init_size)
+        
+        # Generate image through conv blocks
+        img = self.conv_blocks(out)
+        
+        return img
+
+
+class Discriminator(nn.Module):
+    """
+    DCGAN Discriminator network.
+    Distinguishes real from generated samples using convolutional layers.
+    """
+    
+    def __init__(self, num_classes: int = 10, img_shape: Tuple[int, int, int] = (1, 28, 28)):
+        super(Discriminator, self).__init__()
+        
+        self.num_classes = num_classes
+        self.img_shape = img_shape
+        self.channels = img_shape[0]
+        
+        def discriminator_block(in_filters, out_filters, bn=True):
+            """Returns downsampling layers of each discriminator block"""
+            block = [
+                nn.Conv2d(in_filters, out_filters, 3, 2, 1),
+                nn.LeakyReLU(0.2, inplace=True),
+                nn.Dropout2d(0.25)
+            ]
+            if bn:
+                block.append(nn.BatchNorm2d(out_filters, 0.8))
+            return block
+        
+        # Label embedding as additional channel
+        self.label_embedding = nn.Embedding(num_classes, num_classes)
+        
+        # Convolutional layers
+        self.conv_blocks = nn.Sequential(
+            *discriminator_block(self.channels + num_classes, 16, bn=False),
+            *discriminator_block(16, 32),
+            *discriminator_block(32, 64),
+            *discriminator_block(64, 128),
+        )
+        
+        # Calculate the size after convolutions
+        # For 28x28: 28 -> 14 -> 7 -> 3 -> 1
+        # For 32x32: 32 -> 16 -> 8 -> 4 -> 2
+        ds_size = img_shape[1] // 2 ** 4
+        
+        # Output layer
+        self.adv_layer = nn.Sequential(
+            nn.Linear(128 * ds_size ** 2, 1),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, img: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        """
+        Classify images as real or fake
+        
+        Args:
+            img: Input images [batch_size, *img_shape]
+            labels: Class labels [batch_size]
+            
+        Returns:
+            Validity scores [batch_size, 1]
+        """
+        # Embed labels and expand to image dimensions
+        label_embedding = self.label_embedding(labels)
+        label_embedding = label_embedding.view(
+            label_embedding.shape[0], 
+            self.num_classes, 
+            1, 
+            1
+        )
+        label_embedding = label_embedding.expand(
+            -1, -1, self.img_shape[1], self.img_shape[2]
+        )
+        
+        # Concatenate image and label embedding
+        d_in = torch.cat([img, label_embedding], dim=1)
+        
+        # Pass through conv blocks
+        out = self.conv_blocks(d_in)
+        out = out.view(out.shape[0], -1)
+        
+        # Get validity score
+        validity = self.adv_layer(out)
+        
+        return validity
+
+
+def train_generator(
+    generator: Generator,
+    discriminator: Discriminator,
+    dataloader: torch.utils.data.DataLoader,
+    n_epochs: int = 50,
+    device: str = 'cuda',
+    lr: float = 0.0002,
+    b1: float = 0.5,
+    b2: float = 0.999,
+    sample_interval: int = 10
+) -> Tuple[Generator, Discriminator]:
+    """
+    Train the DCGAN generator and discriminator
+    
+    Args:
+        generator: Generator network
+        discriminator: Discriminator network
+        dataloader: Training data loader
+        n_epochs: Number of training epochs
+        device: Device to train on
+        lr: Learning rate
+        b1: Adam beta1
+        b2: Adam beta2
+        sample_interval: Interval for logging
+        
+    Returns:
+        Trained generator and discriminator
+    """
+    generator = generator.to(device)
+    discriminator = discriminator.to(device)
+    
+    # Loss function
+    adversarial_loss = nn.BCELoss()
+    
+    # Optimizers
+    optimizer_G = optim.Adam(generator.parameters(), lr=lr, betas=(b1, b2))
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=lr, betas=(b1, b2))
+    
+    logger.info(f"Training DCGAN for {n_epochs} epochs on {device}...")
+    
+    for epoch in range(n_epochs):
+        epoch_d_loss = 0.0
+        epoch_g_loss = 0.0
+        n_batches = 0
+        
+        for i, (imgs, labels) in enumerate(dataloader):
+            batch_size = imgs.size(0)
+            
+            # Adversarial ground truths
+            valid = torch.ones(batch_size, 1, device=device)
+            fake = torch.zeros(batch_size, 1, device=device)
+            
+            # Move data to device
+            real_imgs = imgs.to(device)
+            labels = labels.to(device)
+            
+            # -----------------
+            #  Train Generator
+            # -----------------
+            optimizer_G.zero_grad()
+            
+            # Sample noise and labels
+            z = torch.randn(batch_size, generator.latent_dim, device=device)
+            gen_labels = torch.randint(0, generator.num_classes, (batch_size,), device=device)
+            
+            # Generate images
+            gen_imgs = generator(z, gen_labels)
+            
+            # Loss measures generator's ability to fool discriminator
+            g_loss = adversarial_loss(discriminator(gen_imgs, gen_labels), valid)
+            
+            g_loss.backward()
+            optimizer_G.step()
+            
+            # ---------------------
+            #  Train Discriminator
+            # ---------------------
+            optimizer_D.zero_grad()
+            
+            # Measure discriminator's ability to classify real from generated samples
+            real_loss = adversarial_loss(discriminator(real_imgs, labels), valid)
+            fake_loss = adversarial_loss(discriminator(gen_imgs.detach(), gen_labels), fake)
+            d_loss = (real_loss + fake_loss) / 2
+            
+            d_loss.backward()
+            optimizer_D.step()
+            
+            epoch_d_loss += d_loss.item()
+            epoch_g_loss += g_loss.item()
+            n_batches += 1
+        
+        # Log epoch statistics
+        avg_d_loss = epoch_d_loss / n_batches
+        avg_g_loss = epoch_g_loss / n_batches
+        
+        if (epoch + 1) % sample_interval == 0:
+            logger.info(
+                f"[Epoch {epoch+1}/{n_epochs}] "
+                f"[D loss: {avg_d_loss:.4f}] "
+                f"[G loss: {avg_g_loss:.4f}]"
+            )
+    
+    logger.info("DCGAN training completed!")
+    return generator, discriminator
+
+
+def generate_synthetic_samples(
+    generator: Generator,
+    num_samples: int,
+    device: str = 'cuda',
+    target_class: Optional[int] = None
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Generate synthetic samples using trained generator
+    
+    Args:
+        generator: Trained generator network
+        num_samples: Number of samples to generate
+        device: Device to generate on
+        target_class: Specific class to generate (None for random)
+        
+    Returns:
+        Tuple of (generated_images, labels)
+    """
+    generator.eval()
+    
+    with torch.no_grad():
+        # Sample noise
+        z = torch.randn(num_samples, generator.latent_dim, device=device)
+        
+        # Generate labels
+        if target_class is not None:
+            labels = torch.full((num_samples,), target_class, dtype=torch.long, device=device)
+        else:
+            labels = torch.randint(0, generator.num_classes, (num_samples,), device=device)
+        
+        # Generate images
+        gen_imgs = generator(z, labels)
+    
+    return gen_imgs, labels
+
+
+# Legacy classes for backward compatibility
 class FairnessProbeGenerator(nn.Module):
     """
     Generator that creates counterfactual fairness probes.

@@ -13,7 +13,158 @@ import torch
 import torch.nn as nn
 import copy
 import numpy as np
+from typing import Dict, List
 from tqdm import tqdm
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class FairnessContributionScorer:
+    """
+    Scores client contributions to overall fairness (simplified version).
+    Implements weighted aggregation based on accuracy and fairness contributions.
+    """
+    
+    def __init__(self, alpha: float = 0.5, beta: float = 0.5):
+        """
+        Args:
+            alpha: Weight for accuracy contribution
+            beta: Weight for fairness contribution
+        """
+        self.alpha = alpha
+        self.beta = beta
+        assert abs(alpha + beta - 1.0) < 1e-6, "alpha + beta must equal 1.0"
+        
+    def compute_accuracy_contribution(
+        self,
+        client_accuracies: List[float],
+        global_accuracy: float
+    ) -> List[float]:
+        """
+        Compute each client's contribution to global accuracy
+        
+        Args:
+            client_accuracies: List of client accuracies
+            global_accuracy: Global model accuracy
+            
+        Returns:
+            List of accuracy contribution scores
+        """
+        if not client_accuracies:
+            return []
+        
+        # Normalize client accuracies relative to global accuracy
+        contributions = []
+        for acc in client_accuracies:
+            # Contribution = how much better than global average
+            contribution = max(0, acc - global_accuracy + 0.1)  # Add small constant to avoid all zeros
+            contributions.append(contribution)
+        
+        # Normalize to sum to 1
+        total = sum(contributions) if sum(contributions) > 0 else 1.0
+        contributions = [c / total for c in contributions]
+        
+        return contributions
+    
+    def compute_fairness_contribution(
+        self,
+        client_fairness_scores: List[Dict[str, float]],
+        global_fairness_score: Dict[str, float]
+    ) -> List[float]:
+        """
+        Compute each client's contribution to global fairness
+        
+        Args:
+            client_fairness_scores: List of client fairness metric dicts
+            global_fairness_score: Global model fairness metrics
+            
+        Returns:
+            List of fairness contribution scores
+        """
+        if not client_fairness_scores:
+            return []
+        
+        contributions = []
+        
+        # Metrics where lower is better (violations)
+        violation_metrics = ['demographic_parity', 'equalized_odds', 'class_balance', 'accuracy_std']
+        
+        for client_metrics in client_fairness_scores:
+            # Compute average fairness improvement across metrics
+            # Lower violation = better fairness = higher contribution
+            fairness_improvement = 0.0
+            n_metrics = 0
+            
+            for metric_name in violation_metrics:
+                if metric_name in global_fairness_score and metric_name in client_metrics:
+                    global_value = global_fairness_score[metric_name]
+                    client_value = client_metrics[metric_name]
+                    
+                    # Improvement = reduction in violation
+                    # If client has lower violation than global, that's good
+                    improvement = max(0, global_value - client_value + 0.1)  # Add small constant
+                    fairness_improvement += improvement
+                    n_metrics += 1
+            
+            if n_metrics > 0:
+                fairness_improvement /= n_metrics
+            else:
+                fairness_improvement = 0.1  # Small default value
+            
+            contributions.append(fairness_improvement)
+        
+        # Normalize to sum to 1
+        total = sum(contributions) if sum(contributions) > 0 else 1.0
+        contributions = [c / total for c in contributions]
+        
+        return contributions
+    
+    def compute_combined_scores(
+        self,
+        client_accuracies: List[float],
+        global_accuracy: float,
+        client_fairness_scores: List[Dict[str, float]],
+        global_fairness_score: Dict[str, float]
+    ) -> List[float]:
+        """
+        Compute combined contribution scores (accuracy + fairness)
+        
+        Args:
+            client_accuracies: List of client accuracies
+            global_accuracy: Global model accuracy
+            client_fairness_scores: List of client fairness metrics
+            global_fairness_score: Global fairness metrics
+            
+        Returns:
+            List of combined contribution scores for aggregation weights
+        """
+        # Compute individual contributions
+        acc_contributions = self.compute_accuracy_contribution(client_accuracies, global_accuracy)
+        fair_contributions = self.compute_fairness_contribution(client_fairness_scores, global_fairness_score)
+        
+        if not acc_contributions or not fair_contributions:
+            # Equal weights as fallback
+            n_clients = len(client_accuracies) if client_accuracies else len(client_fairness_scores)
+            if n_clients == 0:
+                return []
+            return [1.0 / n_clients] * n_clients
+        
+        # Combine with weights
+        combined_scores = []
+        for acc_contrib, fair_contrib in zip(acc_contributions, fair_contributions):
+            combined = self.alpha * acc_contrib + self.beta * fair_contrib
+            combined_scores.append(combined)
+        
+        # Normalize to sum to 1
+        total = sum(combined_scores) if sum(combined_scores) > 0 else 1.0
+        combined_scores = [s / total for s in combined_scores]
+        
+        logger.info(f"Accuracy contributions: {[f'{s:.4f}' for s in acc_contributions]}")
+        logger.info(f"Fairness contributions: {[f'{s:.4f}' for s in fair_contributions]}")
+        logger.info(f"Combined contribution scores: {[f'{s:.4f}' for s in combined_scores]}")
+        
+        return combined_scores
 
 
 class ClientScorer:
