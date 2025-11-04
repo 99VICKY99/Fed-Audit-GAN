@@ -13,32 +13,252 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+from typing import Dict, Optional
 from tqdm import tqdm
+import logging
+
+logger = logging.getLogger(__name__)
 
 
+# New DCGAN-compatible FairnessAuditor (used when initializing with num_classes)
 class FairnessAuditor:
     """
     Handles fairness auditing using generated probes.
     
-    The auditor trains a Generator G to find fairness vulnerabilities in the
-    frozen global model M_global by creating counterfactual pairs (x, x')
-    that maximize prediction differences.
+    Supports two modes:
+    1. DCGAN mode: Initialize with num_classes and device for synthetic probe auditing
+    2. Legacy mode: Initialize with generator and global_model for counterfactual auditing
     
     Args:
-        generator (nn.Module): Fairness probe generator
-        global_model (nn.Module): The frozen global model to audit
+        generator (nn.Module, optional): Fairness probe generator (legacy mode)
+        global_model (nn.Module, optional): The frozen global model to audit (legacy mode)
+        num_classes (int, optional): Number of classes (DCGAN mode)
         device (str): Device for computation ('cpu' or 'cuda')
     """
     
-    def __init__(self, generator, global_model, device='cpu'):
-        self.generator = generator.to(device)
-        self.global_model = global_model.to(device)
+    def __init__(self, generator=None, global_model=None, num_classes=None, device='cpu'):
         self.device = device
+        self.num_classes = num_classes
         
-        # Freeze global model
-        self.global_model.eval()
-        for param in self.global_model.parameters():
-            param.requires_grad = False
+        # Legacy mode (with generator)
+        if generator is not None:
+            self.generator = generator.to(device)
+            self.global_model = global_model.to(device)
+            self.mode = 'legacy'
+            
+            # Freeze global model
+            self.global_model.eval()
+            for param in self.global_model.parameters():
+                param.requires_grad = False
+        
+        # DCGAN mode (without generator)
+        else:
+            self.generator = None
+            self.global_model = None
+            self.mode = 'dcgan'
+            if num_classes is None:
+                raise ValueError("num_classes must be provided in DCGAN mode")
+    
+    def compute_demographic_parity(
+        self,
+        model: nn.Module,
+        dataloader: torch.utils.data.DataLoader,
+        sensitive_attribute: Optional[torch.Tensor] = None
+    ) -> float:
+        """
+        Compute demographic parity violation (DCGAN mode).
+        
+        Args:
+            model: Model to audit
+            dataloader: Data loader with samples
+            sensitive_attribute: Sensitive attribute for each sample
+            
+        Returns:
+            Demographic parity violation score
+        """
+        model.eval()
+        
+        predictions_by_group = {i: [] for i in range(self.num_classes)}
+        
+        with torch.no_grad():
+            batch_idx = 0
+            for data, target in dataloader:
+                data, target = data.to(self.device), target.to(self.device)
+                
+                output = model(data)
+                pred = output.argmax(dim=1)
+                
+                if sensitive_attribute is not None and batch_idx < len(sensitive_attribute):
+                    groups = sensitive_attribute[batch_idx]
+                else:
+                    groups = target
+                
+                for i in range(len(pred)):
+                    group = groups[i].item() if isinstance(groups, torch.Tensor) else target[i].item()
+                    if group < self.num_classes:
+                        predictions_by_group[group].append(pred[i].item())
+                
+                batch_idx += 1
+        
+        # Compute selection rates for each group
+        selection_rates = []
+        for group, preds in predictions_by_group.items():
+            if len(preds) > 0:
+                class_counts = {c: 0 for c in range(self.num_classes)}
+                for p in preds:
+                    if p < self.num_classes:
+                        class_counts[p] += 1
+                
+                total = len(preds)
+                distribution = [class_counts[c] / total for c in range(self.num_classes)]
+                
+                # Compute entropy as selection rate proxy
+                entropy = -sum(p * np.log(p + 1e-10) for p in distribution if p > 0)
+                selection_rates.append(entropy)
+        
+        if len(selection_rates) < 2:
+            return 0.0
+        
+        dp_violation = float(np.std(selection_rates))
+        return dp_violation
+    
+    def compute_equalized_odds(
+        self,
+        model: nn.Module,
+        dataloader: torch.utils.data.DataLoader,
+        sensitive_attribute: Optional[torch.Tensor] = None
+    ) -> float:
+        """
+        Compute equalized odds violation (DCGAN mode).
+        
+        Args:
+            model: Model to audit
+            dataloader: Data loader with samples
+            sensitive_attribute: Sensitive attribute for each sample
+            
+        Returns:
+            Equalized odds violation score
+        """
+        model.eval()
+        
+        correct_by_group = {i: 0 for i in range(self.num_classes)}
+        total_by_group = {i: 0 for i in range(self.num_classes)}
+        
+        with torch.no_grad():
+            batch_idx = 0
+            for data, target in dataloader:
+                data, target = data.to(self.device), target.to(self.device)
+                
+                output = model(data)
+                pred = output.argmax(dim=1)
+                
+                if sensitive_attribute is not None and batch_idx < len(sensitive_attribute):
+                    groups = sensitive_attribute[batch_idx]
+                else:
+                    groups = target
+                
+                for i in range(len(pred)):
+                    group = groups[i].item() if isinstance(groups, torch.Tensor) else target[i].item()
+                    if group < self.num_classes:
+                        total_by_group[group] += 1
+                        if pred[i] == target[i]:
+                            correct_by_group[group] += 1
+                
+                batch_idx += 1
+        
+        # Compute accuracy for each group
+        accuracies = []
+        for group in range(self.num_classes):
+            if total_by_group[group] > 0:
+                acc = correct_by_group[group] / total_by_group[group]
+                accuracies.append(acc)
+        
+        if len(accuracies) < 2:
+            return 0.0
+        
+        eo_violation = float(np.std(accuracies))
+        return eo_violation
+    
+    def compute_class_balance(
+        self,
+        model: nn.Module,
+        dataloader: torch.utils.data.DataLoader
+    ) -> float:
+        """
+        Compute class balance metric (DCGAN mode).
+        
+        Args:
+            model: Model to audit
+            dataloader: Data loader with samples
+            
+        Returns:
+            Class balance score
+        """
+        model.eval()
+        
+        class_counts = {i: 0 for i in range(self.num_classes)}
+        total = 0
+        
+        with torch.no_grad():
+            for data, _ in dataloader:
+                data = data.to(self.device)
+                output = model(data)
+                pred = output.argmax(dim=1)
+                
+                for p in pred:
+                    p_item = p.item()
+                    if p_item < self.num_classes:
+                        class_counts[p_item] += 1
+                        total += 1
+        
+        if total == 0:
+            return 0.0
+        
+        # Compute class distribution
+        class_probs = [class_counts[i] / total for i in range(self.num_classes)]
+        
+        # Ideal uniform distribution
+        uniform_prob = 1.0 / self.num_classes
+        
+        # Compute KL divergence from uniform
+        kl_div = sum(
+            p * np.log((p + 1e-10) / uniform_prob) if p > 0 else 0 
+            for p in class_probs
+        )
+        
+        return float(kl_div)
+    
+    def audit_model(
+        self,
+        model: nn.Module,
+        dataloader: torch.utils.data.DataLoader,
+        sensitive_attribute: Optional[torch.Tensor] = None
+    ) -> Dict[str, float]:
+        """
+        Perform comprehensive fairness audit (DCGAN mode).
+        
+        Args:
+            model: Model to audit
+            dataloader: Data loader with samples
+            sensitive_attribute: Sensitive attribute for each sample
+            
+        Returns:
+            Dictionary of fairness metrics
+        """
+        logger.info("Performing fairness audit...")
+        
+        metrics = {
+            'demographic_parity': self.compute_demographic_parity(model, dataloader, sensitive_attribute),
+            'equalized_odds': self.compute_equalized_odds(model, dataloader, sensitive_attribute),
+            'class_balance': self.compute_class_balance(model, dataloader)
+        }
+        
+        logger.info(f"Fairness Audit Results:")
+        logger.info(f"  Demographic Parity: {metrics['demographic_parity']:.4f}")
+        logger.info(f"  Equalized Odds: {metrics['equalized_odds']:.4f}")
+        logger.info(f"  Class Balance: {metrics['class_balance']:.4f}")
+        
+        return metrics
     
     def calculate_bias(self, model, probe_loader):
         """
