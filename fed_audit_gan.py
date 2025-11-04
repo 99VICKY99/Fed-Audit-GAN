@@ -26,7 +26,10 @@ import matplotlib.pyplot as plt
 # Import custom modules
 from data import get_mnist, get_cifar10, get_cifar100, FederatedSampler
 from models import get_model, LocalUpdate
-from auditor import FairnessProbeGenerator, FairnessAuditor, ClientScorer
+from auditor import (
+    Generator, Discriminator, train_generator, generate_synthetic_samples,
+    FairnessProbeGenerator, FairnessAuditor, FairnessContributionScorer, ClientScorer
+)
 from auditor.utils.scoring import compute_client_update, aggregate_weighted
 from utils import test_model, save_results, plot_results
 
@@ -77,19 +80,19 @@ def parse_args():
     
     # Fed-AuditGAN specific settings
     parser.add_argument('--use_audit_gan', action='store_true',
-                       help='Enable Fed-AuditGAN fairness auditing')
+                       help='Enable Fed-AuditGAN fairness auditing with DCGAN')
     parser.add_argument('--gamma', type=float, default=0.5,
-                       help='Balance between fairness and accuracy [0-1]')
-    parser.add_argument('--n_audit_steps', type=int, default=100,
-                       help='Generator training steps per round')
-    parser.add_argument('--alpha', type=float, default=1.0,
-                       help='Weight for realism loss in generator')
-    parser.add_argument('--beta', type=float, default=0.5,
-                       help='Weight for adversarial loss in generator')
+                       help='Balance between fairness and accuracy [0-1]. 0=pure accuracy, 1=pure fairness')
+    parser.add_argument('--n_audit_steps', type=int, default=50,
+                       help='DCGAN training epochs per round (default: 50)')
     parser.add_argument('--n_probes', type=int, default=1000,
-                       help='Number of fairness probes to generate')
+                       help='Number of synthetic fairness probes to generate')
+    parser.add_argument('--latent_dim', type=int, default=100,
+                       help='Latent dimension for DCGAN generator')
+    parser.add_argument('--use_legacy_generator', action='store_true',
+                       help='Use legacy autoencoder-based generator instead of DCGAN')
     parser.add_argument('--sensitive_attrs', nargs='+', type=int, default=None,
-                       help='Indices of sensitive attributes (if applicable)')
+                       help='Indices of sensitive attributes (for legacy generator only)')
     
     # Experiment tracking
     parser.add_argument('--wandb', action='store_true',
@@ -257,65 +260,195 @@ def main():
         if args.use_audit_gan:
             # Phase 2: Generative Fairness Auditing
             # =======================================
-            print("\n[Phase 2] Generative Fairness Auditing")
             
-            # Determine input dimension for generator
-            if args.model_name == 'mlp' or True:  # Use flattened representation
+            if args.use_legacy_generator:
+                # Legacy autoencoder-based approach
+                print("\n[Phase 2] Generative Fairness Auditing (Legacy Autoencoder)")
+                
+                # Determine input dimension
                 if args.dataset == 'mnist':
                     input_dim = 28 * 28
                 else:  # CIFAR
                     input_dim = 32 * 32 * 3
                 
-                generator = FairnessProbeGenerator(
+                legacy_generator = FairnessProbeGenerator(
                     input_dim=input_dim,
                     hidden_dims=[256, 128, 64],
                     sensitive_attrs_indices=args.sensitive_attrs
                 )
+                
+                # Create auditor with legacy approach
+                legacy_auditor = FairnessAuditor(legacy_generator, global_model, args.device)
+                
+                # Train generator
+                legacy_auditor.train_generator(
+                    seed_data_loader=val_loader,
+                    n_steps=args.n_audit_steps,
+                    alpha=1.0,
+                    beta=0.5
+                )
+                
+                # Generate probes
+                probes = legacy_auditor.generate_probes(val_loader, n_probes=args.n_probes)
+                probe_loader = torch.utils.data.DataLoader(probes, batch_size=32)
+                
+                print(f"✓ Phase 2 complete (legacy mode).")
+                
+            else:
+                # DCGAN-based approach (default)
+                print("\n[Phase 2] Generative Fairness Auditing (DCGAN)")
+                
+                # Determine image shape for DCGAN
+                if args.dataset == 'mnist':
+                    img_shape = (1, 28, 28)
+                else:  # CIFAR
+                    img_shape = (3, 32, 32)
+                
+                # Initialize DCGAN Generator and Discriminator
+                generator = Generator(
+                    latent_dim=args.latent_dim,
+                    num_classes=num_classes,
+                    img_shape=img_shape
+                )
+                discriminator = Discriminator(
+                    num_classes=num_classes,
+                    img_shape=img_shape
+                )
+                
+                print(f"Training DCGAN for {args.n_audit_steps} epochs...")
+                
+                # Train DCGAN to generate synthetic fairness probes
+                generator, discriminator = train_generator(
+                    generator=generator,
+                    discriminator=discriminator,
+                    dataloader=val_loader,
+                    n_epochs=args.n_audit_steps,
+                    device=args.device,
+                    lr=0.0002,
+                    sample_interval=max(args.n_audit_steps // 5, 1)
+                )
+                
+                # Generate synthetic samples for fairness auditing
+                print(f"Generating {args.n_probes} synthetic samples...")
+                synthetic_imgs, synthetic_labels = generate_synthetic_samples(
+                    generator=generator,
+                    num_samples=args.n_probes,
+                    device=args.device
+                )
+                
+                # Create probe dataset
+                probe_dataset = torch.utils.data.TensorDataset(
+                    synthetic_imgs.cpu(), synthetic_labels.cpu()
+                )
+                probe_loader = torch.utils.data.DataLoader(
+                    probe_dataset, batch_size=32, shuffle=False
+                )
             
-            # Create auditor
-            auditor = FairnessAuditor(generator, global_model, args.device)
-            
-            # Train generator to find fairness vulnerabilities
-            auditor.train_generator(
-                seed_data_loader=val_loader,
-                n_steps=args.n_audit_steps,
-                alpha=args.alpha,
-                beta=args.beta
+            # Create fairness auditor
+            auditor = FairnessAuditor(
+                num_classes=num_classes,
+                device=args.device
             )
             
-            # Generate fairness probes
-            probes = auditor.generate_probes(val_loader, n_probes=args.n_probes)
-            probe_loader = torch.utils.data.DataLoader(probes, batch_size=32)
+            # Audit global model fairness
+            fairness_metrics = auditor.audit_model(
+                model=global_model,
+                dataloader=probe_loader
+            )
             
-            # Measure baseline bias
-            baseline_bias = auditor.calculate_bias(global_model, probe_loader)
+            # Store baseline fairness metrics
+            baseline_bias = fairness_metrics['demographic_parity']
             history['bias_scores'].append(baseline_bias)
-            print(f"✓ Phase 2 complete. Baseline bias: {baseline_bias:.6f}")
+            
+            print(f"✓ Phase 2 complete.")
+            print(f"  Demographic Parity: {fairness_metrics['demographic_parity']:.6f}")
+            print(f"  Equalized Odds: {fairness_metrics['equalized_odds']:.6f}")
+            print(f"  Class Balance: {fairness_metrics['class_balance']:.6f}")
             
             # Phase 3: Fairness Contribution Scoring
             # =======================================
             print("\n[Phase 3] Fairness Contribution Scoring")
             
-            scorer = ClientScorer(
-                global_model, auditor, val_loader, args.device
+            # Evaluate each client's contribution
+            client_accuracies = []
+            client_fairness_metrics = []
+            
+            print("Evaluating client contributions...")
+            for idx, update in enumerate(client_updates):
+                # Create hypothetical model with client's update
+                hypothetical_model = copy.deepcopy(global_model)
+                hypothetical_dict = hypothetical_model.state_dict()
+                
+                # Apply update: M_new = M_global + Δ
+                for key in hypothetical_dict.keys():
+                    if key in update:
+                        hypothetical_dict[key] = hypothetical_dict[key] + update[key]
+                
+                hypothetical_model.load_state_dict(hypothetical_dict)
+                
+                # Measure accuracy on validation set
+                hypothetical_model.eval()
+                correct = 0
+                total = 0
+                with torch.no_grad():
+                    for data, target in val_loader:
+                        data, target = data.to(args.device), target.to(args.device)
+                        output = hypothetical_model(data)
+                        pred = output.argmax(dim=1)
+                        correct += (pred == target).sum().item()
+                        total += target.size(0)
+                
+                client_acc = correct / total if total > 0 else 0.0
+                client_accuracies.append(client_acc)
+                
+                # Measure fairness on synthetic probes
+                client_fairness = auditor.audit_model(
+                    model=hypothetical_model,
+                    dataloader=probe_loader
+                )
+                client_fairness_metrics.append(client_fairness)
+                
+                print(f"  Client {idx}: Acc={client_acc:.4f}, "
+                      f"DP={client_fairness['demographic_parity']:.4f}")
+            
+            # Compute global accuracy and fairness
+            global_model.eval()
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for data, target in val_loader:
+                    data, target = data.to(args.device), target.to(args.device)
+                    output = global_model(data)
+                    pred = output.argmax(dim=1)
+                    correct += (pred == target).sum().item()
+                    total += target.size(0)
+            
+            global_accuracy = correct / total if total > 0 else 0.0
+            
+            # Use FairnessContributionScorer to compute weights
+            scorer = FairnessContributionScorer(
+                alpha=1.0 - args.gamma,  # accuracy weight
+                beta=args.gamma  # fairness weight
             )
             
-            scoring_results = scorer.score_all_clients(
-                client_updates, probe_loader, gamma=args.gamma, verbose=True
+            final_weights = scorer.compute_combined_scores(
+                client_accuracies=client_accuracies,
+                global_accuracy=global_accuracy,
+                client_fairness_scores=client_fairness_metrics,
+                global_fairness_score=fairness_metrics
             )
-            
-            # Extract final weights
-            final_weights = scoring_results['final_weights']
             
             # Store statistics
-            history['fairness_scores'].append(
-                np.mean(scoring_results['fairness_scores'])
-            )
-            history['accuracy_scores'].append(
-                np.mean(scoring_results['accuracy_scores'])
-            )
+            avg_fairness = np.mean([
+                m['demographic_parity'] for m in client_fairness_metrics
+            ])
+            history['fairness_scores'].append(avg_fairness)
+            history['accuracy_scores'].append(np.mean(client_accuracies))
             
             print(f"✓ Phase 3 complete.")
+            print(f"  Avg Client Accuracy: {np.mean(client_accuracies):.4f}")
+            print(f"  Avg Client Fairness: {avg_fairness:.4f}")
+            print(f"  Weights: {[f'{w:.3f}' for w in final_weights]}")
             
             # Phase 4: Multi-Objective Aggregation
             # =====================================
