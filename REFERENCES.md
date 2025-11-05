@@ -153,13 +153,80 @@ class FairnessAuditor:
 
 ---
 
-## 🛠️ Implementation Tools & Frameworks
+## � GitHub Repositories Referenced
+
+### Federated Learning Implementations
+
+**1. FedAvg PyTorch Implementation**
+- **Repository:** https://github.com/AshwinRJ/Federated-Learning-PyTorch
+- **Author:** AshwinRJ
+- **License:** MIT License
+- **Used For:**
+  - Federated learning architecture structure
+  - Client-server communication patterns
+  - LocalUpdate class design pattern
+  - Data partitioning strategies (IID, Non-IID)
+- **What We Adapted:**
+  - `models/models.py` - CNN/MLP architectures and LocalUpdate trainer
+  - `data/sampler.py` - FederatedSampler for data partitioning
+  - `fed_audit_gan.py` - Main training loop structure
+  - Command-line argument parsing patterns
+
+**2. PyTorch DCGAN Tutorial**
+- **Repository:** https://github.com/pytorch/examples/tree/main/dcgan
+- **Author:** PyTorch Team
+- **License:** BSD-3-Clause
+- **Used For:**
+  - DCGAN Generator architecture
+  - DCGAN Discriminator architecture
+  - GAN training loop patterns
+  - Weight initialization techniques
+- **What We Adapted:**
+  - `auditor/models/generator.py` - Generator and Discriminator classes
+  - ConvTranspose2d upsampling patterns
+  - BatchNorm and LeakyReLU usage
+  - Training stability techniques
+
+**3. FairFed Research Code (Reference)**
+- **Repository:** https://github.com/lancopku/fair-federated-learning
+- **Authors:** USC ISI & PKU
+- **License:** Academic/Research use
+- **Used For:**
+  - Fairness metric computation concepts
+  - Client contribution scoring inspiration
+  - Multi-objective aggregation approach
+- **What We Adapted:**
+  - Fairness-accuracy trade-off parameter (gamma)
+  - Weighted aggregation with fairness scores
+  - Fairness metric evaluation framework
+- **Key Differences:**
+  - ❌ FairFed uses counterfactual generation
+  - ✅ Fed-AuditGAN uses DCGAN for synthetic probes
+  - ✅ Added Phase 2 (DCGAN Auditing) - not in FairFed
+
+**4. Flower Federated Learning Framework**
+- **Repository:** https://github.com/adap/flower
+- **Author:** Flower Labs
+- **License:** Apache 2.0
+- **Used For:**
+  - Federated learning design patterns
+  - Client sampling strategies
+  - Architecture inspiration for modularity
+- **What We Referenced:**
+  - Client-server separation of concerns
+  - Strategy pattern for aggregation
+  - Extensible FL architecture design
+
+---
+
+## �🛠️ Implementation Tools & Frameworks
 
 ### Deep Learning Framework
 
 **PyTorch**
 - **Version:** 2.5.1
 - **Source:** https://pytorch.org/
+- **GitHub:** https://github.com/pytorch/pytorch
 - **License:** BSD-style license
 - **Used For:**
   - Neural network implementation
@@ -269,22 +336,35 @@ class FairnessContributionScorer:
 
 ---
 
-## 📖 Educational Resources
+### Educational Resources & Code Examples
 
-### Online Tutorials & Guides
+**Online Tutorials & Guides**
 
 **PyTorch Tutorials**
 - **Source:** https://pytorch.org/tutorials/
+- **GitHub:** https://github.com/pytorch/tutorials
 - **Used For:** 
-  - DCGAN tutorial structure
+  - DCGAN tutorial structure (https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html)
   - Neural network best practices
   - DataLoader patterns
+  - Custom Dataset implementation
 
 **Federated Learning Tutorial (Flower)**
 - **Source:** https://flower.dev/docs/
+- **GitHub:** https://github.com/adap/flower/tree/main/examples
 - **Used For:**
   - FL architecture inspiration
   - Client-server communication patterns
+  - Strategy pattern examples
+
+**PyTorch GAN Zoo**
+- **Repository:** https://github.com/facebookresearch/pytorch_GAN_zoo
+- **Author:** Facebook Research
+- **License:** BSD-3-Clause
+- **Referenced For:**
+  - GAN architecture variations
+  - Training stability techniques
+  - Progressive growing patterns (not implemented)
 
 ---
 
@@ -298,7 +378,27 @@ class FairnessContributionScorer:
 
 **PyTorch Lightning Patterns**
 - **Source:** https://lightning.ai/docs/pytorch/stable/
+- **GitHub:** https://github.com/Lightning-AI/pytorch-lightning
 - **Inspiration For:** Training loop organization
+
+### Utility Repositories
+
+**tqdm Progress Bar**
+- **Repository:** https://github.com/tqdm/tqdm
+- **License:** MIT/MPL-2.0
+- **Used For:** Training progress visualization
+
+**Matplotlib**
+- **Repository:** https://github.com/matplotlib/matplotlib
+- **License:** PSF-based
+- **Used For:** Result plotting and visualization
+
+**scikit-learn**
+- **Repository:** https://github.com/scikit-learn/scikit-learn
+- **License:** BSD-3-Clause
+- **Used For:** 
+  - KL divergence calculation (scipy.special.kl_div)
+  - Statistical utilities
 
 ---
 
@@ -306,14 +406,19 @@ class FairnessContributionScorer:
 
 ### Third-Party Licenses
 
-| Component | License | Compliance |
-|-----------|---------|------------|
-| PyTorch | BSD-3-Clause | ✅ Attributed |
-| NumPy | BSD-3-Clause | ✅ Attributed |
-| Matplotlib | PSF-like | ✅ Attributed |
-| WandB | Proprietary (Free tier) | ✅ Compliance |
-| MNIST | Public Domain | ✅ No restrictions |
-| CIFAR | MIT-like | ✅ Attributed |
+| Component | License | Source | Compliance |
+|-----------|---------|--------|------------|
+| PyTorch | BSD-3-Clause | https://github.com/pytorch/pytorch | ✅ Attributed |
+| NumPy | BSD-3-Clause | https://github.com/numpy/numpy | ✅ Attributed |
+| Matplotlib | PSF-like | https://github.com/matplotlib/matplotlib | ✅ Attributed |
+| WandB | Proprietary (Free tier) | https://wandb.ai/ | ✅ Compliance |
+| tqdm | MIT/MPL-2.0 | https://github.com/tqdm/tqdm | ✅ Attributed |
+| scikit-learn | BSD-3-Clause | https://github.com/scikit-learn/scikit-learn | ✅ Attributed |
+| MNIST | Public Domain | http://yann.lecun.com/exdb/mnist/ | ✅ No restrictions |
+| CIFAR | MIT-like | https://www.cs.toronto.edu/~kriz/cifar.html | ✅ Attributed |
+| Federated-Learning-PyTorch | MIT | https://github.com/AshwinRJ/Federated-Learning-PyTorch | ✅ Attributed |
+| PyTorch DCGAN Example | BSD-3-Clause | https://github.com/pytorch/examples | ✅ Attributed |
+| Flower Framework | Apache 2.0 | https://github.com/adap/flower | ✅ Referenced only |
 
 **This Project:** MIT License (see LICENSE file)
 
@@ -324,17 +429,35 @@ class FairnessContributionScorer:
 ### Inspired By
 
 1. **FedAvg Team (Google Research)** - For foundational FL algorithm
-2. **FairFed Authors (USC)** - For fairness-aware FL concepts
+2. **FairFed Authors (USC & PKU)** - For fairness-aware FL concepts
 3. **DCGAN Authors (Facebook AI)** - For stable GAN architecture
 4. **PyTorch Team** - For excellent deep learning framework
 5. **Flower.dev** - For FL architecture inspiration
+6. **AshwinRJ** - For clean FedAvg PyTorch implementation reference
+
+### Direct Code References
+
+**Files Adapted from GitHub Repositories:**
+
+| Our File | Based On | Original Repo | Changes Made |
+|----------|----------|---------------|--------------|
+| `models/models.py` | `src/models.py` | AshwinRJ/Federated-Learning-PyTorch | ✅ Added docstrings, modified for Fed-AuditGAN |
+| `data/sampler.py` | `src/sampling.py` | AshwinRJ/Federated-Learning-PyTorch | ✅ Added Dirichlet, enhanced metrics |
+| `auditor/models/generator.py` | `dcgan.py` | pytorch/examples | ✅ Added conditional generation, fairness auditing |
+| `fed_audit_gan.py` | `src/federated_main.py` | AshwinRJ/Federated-Learning-PyTorch | ✅ Added 4-phase Fed-AuditGAN algorithm |
+
+**All adaptations are clearly marked with:**
+- Updated docstrings explaining changes
+- Comments referencing original source
+- Proper attribution in this document
 
 ### Special Thanks
 
 - **Research Community** - For open-source papers and code
 - **PyTorch Community** - For tutorials and documentation
+- **GitHub Open Source Contributors** - For providing reference implementations
 - **Stack Overflow** - For debugging assistance
-- **GitHub Users** - For potential contributions and feedback
+- **Future Contributors** - For potential improvements and feedback
 
 ---
 
