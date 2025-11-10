@@ -31,6 +31,11 @@ from auditor import (
     FairnessProbeGenerator, FairnessAuditor, FairnessContributionScorer, ClientScorer
 )
 from auditor.utils.scoring import compute_client_update, aggregate_weighted
+from auditor.utils.jfi import (
+    compute_jains_fairness_index, 
+    compute_coefficient_of_variation,
+    compute_max_min_ratio
+)
 from utils import test_model, save_results, plot_results
 
 # WandB for experiment tracking (optional)
@@ -93,6 +98,10 @@ def parse_args():
                        help='Use legacy autoencoder-based generator instead of DCGAN')
     parser.add_argument('--sensitive_attrs', nargs='+', type=int, default=None,
                        help='Indices of sensitive attributes (for legacy generator only)')
+    parser.add_argument('--sensitive_attr_strategy', type=str, default='class_imbalance',
+                       choices=['class_imbalance', 'uncertainty', 'mixed'],
+                       help='Strategy for creating sensitive attributes: class_imbalance (split by class representation), '
+                            'uncertainty (split by model confidence), or mixed (50/50 combination)')
     
     # Experiment tracking
     parser.add_argument('--wandb', action='store_true',
@@ -352,16 +361,21 @@ def main():
                 device=args.device
             )
             
-            # CRITICAL FIX: Use synthetic labels as sensitive attributes
-            # This ensures we're measuring fairness across different demographic groups
-            # represented by the generated classes
-            print(f"Using synthetic labels as sensitive attributes for fairness auditing...")
+            # NEW: Set global model reference for uncertainty-based strategies
+            auditor.set_global_model(global_model)
             
-            # Audit global model fairness
+            # NEW: Create proper sensitive attributes from data heterogeneity
+            print(f"Creating sensitive attributes using strategy: {args.sensitive_attr_strategy}")
+            sensitive_attrs = auditor.create_sensitive_attributes_from_heterogeneity(
+                dataloader=probe_loader,
+                strategy=args.sensitive_attr_strategy
+            )
+            
+            # Audit global model fairness with REAL sensitive attributes
             fairness_metrics = auditor.audit_model(
                 model=global_model,
                 dataloader=probe_loader,
-                sensitive_attribute=synthetic_labels.cpu()  # Pass synthetic labels!
+                sensitive_attribute=sensitive_attrs  # Use real demographic groups!
             )
             
             # Store baseline fairness metrics
@@ -409,12 +423,11 @@ def main():
                 client_acc = correct / total if total > 0 else 0.0
                 client_accuracies.append(client_acc)
                 
-                # Measure fairness on synthetic probes
-                # CRITICAL FIX: Pass synthetic labels as sensitive attributes
+                # Measure fairness on synthetic probes with REAL sensitive attributes
                 client_fairness = auditor.audit_model(
                     model=hypothetical_model,
                     dataloader=probe_loader,
-                    sensitive_attribute=synthetic_labels.cpu()  # Pass synthetic labels!
+                    sensitive_attribute=sensitive_attrs  # Use real demographic groups!
                 )
                 client_fairness_metrics.append(client_fairness)
                 
@@ -445,7 +458,8 @@ def main():
             
             scorer = FairnessContributionScorer(
                 alpha=alpha,
-                beta=beta
+                beta=beta,
+                jfi_weight=0.1  # NEW: 10% JFI regularization to prevent "rich get richer"
             )
             
             final_weights = scorer.compute_combined_scores(
@@ -468,9 +482,34 @@ def main():
             history['fairness_scores'].append(avg_fairness)
             history['accuracy_scores'].append(np.mean(client_accuracies))
             
+            # NEW: Compute JFI metrics for client-level fairness
+            jfi_accuracy = compute_jains_fairness_index(client_accuracies)
+            jfi_fairness = compute_jains_fairness_index([
+                m['demographic_parity'] for m in client_fairness_metrics
+            ])
+            cv_accuracy = compute_coefficient_of_variation(client_accuracies)
+            cv_fairness = compute_coefficient_of_variation([
+                m['demographic_parity'] for m in client_fairness_metrics
+            ])
+            
+            # Store JFI metrics in history
+            if 'jfi_accuracy' not in history:
+                history['jfi_accuracy'] = []
+                history['jfi_fairness'] = []
+                history['cv_accuracy'] = []
+                history['cv_fairness'] = []
+            
+            history['jfi_accuracy'].append(jfi_accuracy)
+            history['jfi_fairness'].append(jfi_fairness)
+            history['cv_accuracy'].append(cv_accuracy)
+            history['cv_fairness'].append(cv_fairness)
+            
             print(f"✓ Phase 3 complete.")
             print(f"  Avg Client Accuracy: {np.mean(client_accuracies):.4f}")
             print(f"  Avg Client Fairness: {avg_fairness:.4f}")
+            print(f"  JFI (Accuracy): {jfi_accuracy:.4f} [1.0=perfectly fair]")
+            print(f"  JFI (Fairness): {jfi_fairness:.4f} [1.0=perfectly fair]")
+            print(f"  CV (Accuracy): {cv_accuracy:.4f} [lower=more fair]")
             print(f"  Weights: {[f'{w:.3f}' for w in final_weights]}")
             
             # Phase 4: Multi-Objective Aggregation
@@ -509,6 +548,8 @@ def main():
             print(f"  Baseline Bias: {baseline_bias:.6f}")
             print(f"  Avg Fairness Score: {history['fairness_scores'][-1]:.6f}")
             print(f"  Avg Accuracy Score: {history['accuracy_scores'][-1]:.6f}")
+            print(f"  JFI Accuracy: {history['jfi_accuracy'][-1]:.4f}")
+            print(f"  JFI Fairness: {history['jfi_fairness'][-1]:.4f}")
         print(f"{'='*60}\n")
         
         # Log to W&B
@@ -523,7 +564,11 @@ def main():
                 log_dict.update({
                     'baseline_bias': baseline_bias,
                     'avg_fairness_score': history['fairness_scores'][-1],
-                    'avg_accuracy_score': history['accuracy_scores'][-1]
+                    'avg_accuracy_score': history['accuracy_scores'][-1],
+                    'jfi_accuracy': history['jfi_accuracy'][-1],
+                    'jfi_fairness': history['jfi_fairness'][-1],
+                    'cv_accuracy': history['cv_accuracy'][-1],
+                    'cv_fairness': history['cv_fairness'][-1]
                 })
             wandb.log(log_dict)
     

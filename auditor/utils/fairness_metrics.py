@@ -39,6 +39,7 @@ class FairnessAuditor:
     def __init__(self, generator=None, global_model=None, num_classes=None, device='cpu'):
         self.device = device
         self.num_classes = num_classes
+        self._global_model_ref = None  # For uncertainty-based sensitive attributes
         
         # Legacy mode (with generator)
         if generator is not None:
@@ -59,6 +60,149 @@ class FairnessAuditor:
             if num_classes is None:
                 raise ValueError("num_classes must be provided in DCGAN mode")
     
+    def set_global_model(self, model: nn.Module):
+        """
+        Set reference to global model for uncertainty-based sensitive attribute generation.
+        
+        Args:
+            model: Current global model to use for uncertainty calculations
+        """
+        self._global_model_ref = model
+    
+    def create_sensitive_attributes_from_heterogeneity(
+        self,
+        dataloader: torch.utils.data.DataLoader,
+        strategy: str = 'class_imbalance'
+    ) -> torch.Tensor:
+        """
+        Create synthetic sensitive attributes from data heterogeneity.
+        
+        This addresses the fundamental problem: using class labels (0-9) as sensitive 
+        attributes doesn't measure demographic fairness. Instead, we create binary
+        demographic groups based on data characteristics.
+        
+        Strategies:
+        1. 'class_imbalance': Split by class representation
+           - Disadvantaged group (1): samples from underrepresented classes
+           - Advantaged group (0): samples from well-represented classes
+        
+        2. 'uncertainty': Split by model uncertainty (requires set_global_model())
+           - Disadvantaged group (1): high-uncertainty samples (model struggles)
+           - Advantaged group (0): low-uncertainty samples (model confident)
+        
+        3. 'mixed': Combine class_imbalance and uncertainty (50/50 weight)
+        
+        Args:
+            dataloader: Data loader with samples
+            strategy: Strategy for creating sensitive attributes
+                     ('class_imbalance', 'uncertainty', or 'mixed')
+        
+        Returns:
+            Tensor of binary sensitive attributes (0=advantaged, 1=disadvantaged)
+        
+        Example:
+            >>> auditor = FairnessAuditor(num_classes=10, device='cuda')
+            >>> auditor.set_global_model(global_model)
+            >>> sensitive_attr = auditor.create_sensitive_attributes_from_heterogeneity(
+            ...     probe_loader, strategy='class_imbalance'
+            ... )
+            >>> # Returns tensor like [0, 1, 1, 0, 1, ...] (binary groups)
+        """
+        all_targets = []
+        all_data = []
+        
+        # Collect all data and targets
+        for data, target in dataloader:
+            all_data.append(data)
+            all_targets.append(target)
+        
+        all_data = torch.cat(all_data, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+        n_samples = len(all_targets)
+        
+        if strategy == 'class_imbalance':
+            # Strategy 1: Split by class representation
+            class_counts = torch.bincount(all_targets, minlength=self.num_classes)
+            median_count = torch.median(class_counts.float())
+            
+            # Samples from underrepresented classes → disadvantaged (1)
+            # Samples from well-represented classes → advantaged (0)
+            sensitive_attrs = (class_counts[all_targets] < median_count).long()
+            
+            logger.info(f"Class imbalance sensitive attributes: "
+                       f"{sensitive_attrs.sum().item()}/{n_samples} disadvantaged")
+        
+        elif strategy == 'uncertainty':
+            # Strategy 2: Split by model uncertainty
+            if self._global_model_ref is None:
+                raise ValueError("Global model not set. Call set_global_model() first.")
+            
+            self._global_model_ref.eval()
+            uncertainties = []
+            
+            with torch.no_grad():
+                for data in torch.split(all_data, 256):  # Process in batches
+                    data = data.to(self.device)
+                    output = self._global_model_ref(data)
+                    probs = torch.softmax(output, dim=1)
+                    
+                    # Uncertainty = 1 - max(prob)
+                    max_probs, _ = probs.max(dim=1)
+                    uncertainty = 1.0 - max_probs
+                    uncertainties.append(uncertainty.cpu())
+            
+            uncertainties = torch.cat(uncertainties)
+            median_uncertainty = torch.median(uncertainties)
+            
+            # High uncertainty → disadvantaged (1)
+            # Low uncertainty → advantaged (0)
+            sensitive_attrs = (uncertainties > median_uncertainty).long()
+            
+            logger.info(f"Uncertainty sensitive attributes: "
+                       f"{sensitive_attrs.sum().item()}/{n_samples} disadvantaged")
+        
+        elif strategy == 'mixed':
+            # Strategy 3: Combine class_imbalance and uncertainty (50/50)
+            if self._global_model_ref is None:
+                raise ValueError("Global model not set. Call set_global_model() first.")
+            
+            # Get class imbalance scores
+            class_counts = torch.bincount(all_targets, minlength=self.num_classes)
+            median_count = torch.median(class_counts.float())
+            imbalance_scores = (class_counts[all_targets] < median_count).float()
+            
+            # Get uncertainty scores
+            self._global_model_ref.eval()
+            uncertainties = []
+            
+            with torch.no_grad():
+                for data in torch.split(all_data, 256):
+                    data = data.to(self.device)
+                    output = self._global_model_ref(data)
+                    probs = torch.softmax(output, dim=1)
+                    max_probs, _ = probs.max(dim=1)
+                    uncertainty = 1.0 - max_probs
+                    uncertainties.append(uncertainty.cpu())
+            
+            uncertainties = torch.cat(uncertainties)
+            
+            # Normalize both to [0, 1]
+            uncertainty_norm = (uncertainties - uncertainties.min()) / (uncertainties.max() - uncertainties.min() + 1e-8)
+            
+            # Combine: 50% imbalance + 50% uncertainty
+            combined_scores = 0.5 * imbalance_scores + 0.5 * uncertainty_norm
+            median_combined = torch.median(combined_scores)
+            
+            sensitive_attrs = (combined_scores > median_combined).long()
+            
+            logger.info(f"Mixed sensitive attributes: "
+                       f"{sensitive_attrs.sum().item()}/{n_samples} disadvantaged")
+        
+        else:
+            raise ValueError(f"Unknown strategy: {strategy}. Use 'class_imbalance', 'uncertainty', or 'mixed'.")
+        
+        return sensitive_attrs
+    
     def compute_demographic_parity(
         self,
         model: nn.Module,
@@ -69,19 +213,21 @@ class FairnessAuditor:
         Compute demographic parity violation (DCGAN mode).
         
         Measures if positive prediction rates are equal across demographic groups.
-        Split classes 0-4 vs 5-9 as two synthetic demographic groups.
+        Now uses REAL sensitive attributes (0=advantaged, 1=disadvantaged) instead
+        of class labels.
         
         Args:
             model: Model to audit
             dataloader: Data loader with samples
-            sensitive_attribute: Tensor of sensitive attributes (ignored, uses targets)
+            sensitive_attribute: Tensor of binary sensitive attributes (0/1)
+                                If None, falls back to old class-based splitting
             
         Returns:
             Demographic parity violation score (0.0 = perfect fairness)
         """
         model.eval()
         
-        # Collect all predictions and targets
+        # Collect all predictions
         all_predictions = []
         all_targets = []
         
@@ -100,20 +246,45 @@ class FairnessAuditor:
         if len(all_predictions) == 0:
             return 0.0
         
-        # Split into synthetic demographic groups
-        # Group A = classes 0-4, Group B = classes 5-9
-        group_a_mask = all_targets < 5
-        group_b_mask = all_targets >= 5
-        
-        if group_a_mask.sum() == 0 or group_b_mask.sum() == 0:
-            return 0.0
-        
-        # "Positive" outcome = predicted as high-value class (5-9)
-        group_a_positive_rate = (all_predictions[group_a_mask] >= 5).mean()
-        group_b_positive_rate = (all_predictions[group_b_mask] >= 5).mean()
-        
-        # Demographic parity violation = difference in positive rates
-        dp_violation = abs(float(group_a_positive_rate) - float(group_b_positive_rate))
+        # Use provided sensitive attributes (NEW!)
+        if sensitive_attribute is not None:
+            if len(sensitive_attribute) != len(all_predictions):
+                logger.warning(f"Sensitive attribute length mismatch: "
+                             f"{len(sensitive_attribute)} vs {len(all_predictions)}")
+                return 0.0
+            
+            sensitive_attr_np = sensitive_attribute.cpu().numpy() if torch.is_tensor(sensitive_attribute) else sensitive_attribute
+            
+            # Group 0 = advantaged, Group 1 = disadvantaged
+            group_advantaged_mask = sensitive_attr_np == 0
+            group_disadvantaged_mask = sensitive_attr_np == 1
+            
+            if group_advantaged_mask.sum() == 0 or group_disadvantaged_mask.sum() == 0:
+                return 0.0
+            
+            # "Positive" outcome = correct prediction
+            # Calculate accuracy for each group
+            advantaged_correct = (all_predictions[group_advantaged_mask] == all_targets[group_advantaged_mask])
+            disadvantaged_correct = (all_predictions[group_disadvantaged_mask] == all_targets[group_disadvantaged_mask])
+            
+            advantaged_accuracy = advantaged_correct.mean()
+            disadvantaged_accuracy = disadvantaged_correct.mean()
+            
+            # Demographic parity violation = difference in accuracies
+            dp_violation = abs(float(advantaged_accuracy) - float(disadvantaged_accuracy))
+            
+        else:
+            # Fallback to old class-based splitting (for backward compatibility)
+            group_a_mask = all_targets < 5
+            group_b_mask = all_targets >= 5
+            
+            if group_a_mask.sum() == 0 or group_b_mask.sum() == 0:
+                return 0.0
+            
+            group_a_positive_rate = (all_predictions[group_a_mask] >= 5).mean()
+            group_b_positive_rate = (all_predictions[group_b_mask] >= 5).mean()
+            
+            dp_violation = abs(float(group_a_positive_rate) - float(group_b_positive_rate))
         
         return dp_violation
     
@@ -127,12 +298,13 @@ class FairnessAuditor:
         Compute equalized odds violation (DCGAN mode).
         
         Measures if TPR and FPR are equal across demographic groups.
-        Split classes 0-4 vs 5-9 as two synthetic demographic groups.
+        Now uses REAL sensitive attributes (0=advantaged, 1=disadvantaged).
         
         Args:
             model: Model to audit
             dataloader: Data loader with samples
-            sensitive_attribute: Tensor of sensitive attributes (ignored, uses targets)
+            sensitive_attribute: Tensor of binary sensitive attributes (0/1)
+                                If None, falls back to old class-based splitting
             
         Returns:
             Equalized odds violation score (0.0 = perfect fairness)
@@ -158,52 +330,114 @@ class FairnessAuditor:
         if len(all_predictions) == 0:
             return 0.0
         
-        # Split into synthetic demographic groups
-        group_a_mask = all_targets < 5
-        group_b_mask = all_targets >= 5
-        
-        if group_a_mask.sum() == 0 or group_b_mask.sum() == 0:
-            return 0.0
-        
-        # Group A statistics
-        group_a_preds = all_predictions[group_a_mask]
-        group_a_true = all_targets[group_a_mask]
-        
-        # TPR: P(pred >= 5 | true >= 5)
-        a_positive_mask = group_a_true >= 5
-        if a_positive_mask.sum() > 0:
-            group_a_tpr = (group_a_preds[a_positive_mask] >= 5).mean()
+        # Use provided sensitive attributes (NEW!)
+        if sensitive_attribute is not None:
+            if len(sensitive_attribute) != len(all_predictions):
+                logger.warning(f"Sensitive attribute length mismatch: "
+                             f"{len(sensitive_attribute)} vs {len(all_predictions)}")
+                return 0.0
+            
+            sensitive_attr_np = sensitive_attribute.cpu().numpy() if torch.is_tensor(sensitive_attribute) else sensitive_attribute
+            
+            # Group 0 = advantaged, Group 1 = disadvantaged
+            group_advantaged_mask = sensitive_attr_np == 0
+            group_disadvantaged_mask = sensitive_attr_np == 1
+            
+            if group_advantaged_mask.sum() == 0 or group_disadvantaged_mask.sum() == 0:
+                return 0.0
+            
+            # For each group, compute TPR and FPR per class
+            # TPR: P(correct | true class c), averaged over all classes
+            # FPR: P(pred class c | true class != c), averaged over all classes
+            
+            def compute_tpr_fpr_multiclass(preds, targets):
+                """Compute average TPR and FPR across all classes"""
+                tprs = []
+                fprs = []
+                
+                for c in range(self.num_classes):
+                    true_positive = ((preds == c) & (targets == c)).sum()
+                    false_negative = ((preds != c) & (targets == c)).sum()
+                    false_positive = ((preds == c) & (targets != c)).sum()
+                    true_negative = ((preds != c) & (targets != c)).sum()
+                    
+                    # TPR = TP / (TP + FN)
+                    if (true_positive + false_negative) > 0:
+                        tpr = true_positive / (true_positive + false_negative)
+                        tprs.append(tpr)
+                    
+                    # FPR = FP / (FP + TN)
+                    if (false_positive + true_negative) > 0:
+                        fpr = false_positive / (false_positive + true_negative)
+                        fprs.append(fpr)
+                
+                avg_tpr = np.mean(tprs) if tprs else 0.0
+                avg_fpr = np.mean(fprs) if fprs else 0.0
+                
+                return avg_tpr, avg_fpr
+            
+            # Compute for advantaged group
+            adv_tpr, adv_fpr = compute_tpr_fpr_multiclass(
+                all_predictions[group_advantaged_mask],
+                all_targets[group_advantaged_mask]
+            )
+            
+            # Compute for disadvantaged group
+            dis_tpr, dis_fpr = compute_tpr_fpr_multiclass(
+                all_predictions[group_disadvantaged_mask],
+                all_targets[group_disadvantaged_mask]
+            )
+            
+            # Equalized Odds violation = average of TPR and FPR gaps
+            tpr_gap = abs(float(adv_tpr) - float(dis_tpr))
+            fpr_gap = abs(float(adv_fpr) - float(dis_fpr))
+            
+            eo_violation = (tpr_gap + fpr_gap) / 2.0
+            
         else:
-            group_a_tpr = 0.0
-        
-        # FPR: P(pred >= 5 | true < 5)
-        a_negative_mask = group_a_true < 5
-        if a_negative_mask.sum() > 0:
-            group_a_fpr = (group_a_preds[a_negative_mask] >= 5).mean()
-        else:
-            group_a_fpr = 0.0
-        
-        # Group B statistics
-        group_b_preds = all_predictions[group_b_mask]
-        group_b_true = all_targets[group_b_mask]
-        
-        b_positive_mask = group_b_true >= 5
-        if b_positive_mask.sum() > 0:
-            group_b_tpr = (group_b_preds[b_positive_mask] >= 5).mean()
-        else:
-            group_b_tpr = 0.0
-        
-        b_negative_mask = group_b_true < 5
-        if b_negative_mask.sum() > 0:
-            group_b_fpr = (group_b_preds[b_negative_mask] >= 5).mean()
-        else:
-            group_b_fpr = 0.0
-        
-        # Equalized Odds violation = average of TPR and FPR gaps
-        tpr_gap = abs(float(group_a_tpr) - float(group_b_tpr))
-        fpr_gap = abs(float(group_a_fpr) - float(group_b_fpr))
-        
-        eo_violation = (tpr_gap + fpr_gap) / 2.0
+            # Fallback to old class-based splitting
+            group_a_mask = all_targets < 5
+            group_b_mask = all_targets >= 5
+            
+            if group_a_mask.sum() == 0 or group_b_mask.sum() == 0:
+                return 0.0
+            
+            # Group A statistics
+            group_a_preds = all_predictions[group_a_mask]
+            group_a_true = all_targets[group_a_mask]
+            
+            a_positive_mask = group_a_true >= 5
+            if a_positive_mask.sum() > 0:
+                group_a_tpr = (group_a_preds[a_positive_mask] >= 5).mean()
+            else:
+                group_a_tpr = 0.0
+            
+            a_negative_mask = group_a_true < 5
+            if a_negative_mask.sum() > 0:
+                group_a_fpr = (group_a_preds[a_negative_mask] >= 5).mean()
+            else:
+                group_a_fpr = 0.0
+            
+            # Group B statistics
+            group_b_preds = all_predictions[group_b_mask]
+            group_b_true = all_targets[group_b_mask]
+            
+            b_positive_mask = group_b_true >= 5
+            if b_positive_mask.sum() > 0:
+                group_b_tpr = (group_b_preds[b_positive_mask] >= 5).mean()
+            else:
+                group_b_tpr = 0.0
+            
+            b_negative_mask = group_b_true < 5
+            if b_negative_mask.sum() > 0:
+                group_b_fpr = (group_b_preds[b_negative_mask] >= 5).mean()
+            else:
+                group_b_fpr = 0.0
+            
+            tpr_gap = abs(float(group_a_tpr) - float(group_b_tpr))
+            fpr_gap = abs(float(group_a_fpr) - float(group_b_fpr))
+            
+            eo_violation = (tpr_gap + fpr_gap) / 2.0
         
         return eo_violation
     

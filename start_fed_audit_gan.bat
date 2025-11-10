@@ -214,7 +214,7 @@ if /i "%choice%"=="B" (
 if /i "%choice%"=="D" (
     echo Running MNIST Dirichlet Non-IID - Gamma=0.5 balanced...
     echo Using Dirichlet alpha=0.1 for flexible heterogeneity
-    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.5 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.5"
+    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.5 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.5" --sensitive_attr_strategy class_imbalance
     goto END
 )
 if /i "%choice%"=="E" (
@@ -227,7 +227,20 @@ if /i "%choice%"=="E" (
     pause
     
     echo [1/5] Dirichlet Non-IID - Gamma=0.0...
-    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.0 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.0"
+    echo [1/5] Dirichlet Non-IID - Gamma=0.0...
+    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.0 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.0" --sensitive_attr_strategy class_imbalance
+    
+    echo [2/5] Dirichlet Non-IID - Gamma=0.3...
+    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.3 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.3" --sensitive_attr_strategy class_imbalance
+    
+    echo [3/5] Dirichlet Non-IID - Gamma=0.5...
+    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.5 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.5" --sensitive_attr_strategy class_imbalance
+    
+    echo [4/5] Dirichlet Non-IID - Gamma=0.7...
+    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.7 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.7" --sensitive_attr_strategy class_imbalance
+    
+    echo [5/5] Dirichlet Non-IID - Gamma=1.0...
+    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 1.0 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_1.0" --sensitive_attr_strategy class_imbalance
     
     echo [2/5] Dirichlet Non-IID - Gamma=0.3...
     "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.3 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.3"
@@ -236,7 +249,7 @@ if /i "%choice%"=="E" (
     "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.5 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.5"
     
     echo [4/5] Dirichlet Non-IID - Gamma=0.7...
-    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.7 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.7"
+    "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 0.7 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_0.7" --sensitive_attr_strategy class_imbalance
     
     echo [5/5] Dirichlet Non-IID - Gamma=1.0...
     "%PYTHON_PATH%" fed_audit_gan.py --dataset mnist --partition_mode dirichlet --dirichlet_alpha 0.1 --use_audit_gan --gamma 1.0 --n_epochs 50 --wandb --exp_name "MNIST_Dirichlet_Gamma_1.0"

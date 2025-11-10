@@ -7,6 +7,11 @@ This module calculates:
 1. Fairness contribution scores (bias reduction)
 2. Accuracy contribution scores (loss reduction)
 3. Final multi-objective weights for aggregation
+
+Enhanced with:
+- JFI-based regularization to prevent "rich get richer" dynamics
+- Percentage-based improvements instead of absolute improvements
+- Weighted fairness metric aggregation
 """
 
 import torch
@@ -17,24 +22,37 @@ from typing import Dict, List
 from tqdm import tqdm
 import logging
 
+# Import JFI utilities for client-level fairness
+from .jfi import compute_jains_fairness_index, compute_coefficient_of_variation
+
 logger = logging.getLogger(__name__)
 
 
 class FairnessContributionScorer:
     """
-    Scores client contributions to overall fairness (simplified version).
+    Scores client contributions to overall fairness (enhanced version).
     Implements weighted aggregation based on accuracy and fairness contributions.
+    
+    Enhanced with:
+    - JFI regularization to penalize outlier performance (prevents "rich get richer")
+    - Percentage-based improvements instead of absolute improvements
+    - Weighted fairness metric aggregation (0.4×DP + 0.4×EO + 0.2×CB)
     """
     
-    def __init__(self, alpha: float = 0.5, beta: float = 0.5):
+    def __init__(self, alpha: float = 0.5, beta: float = 0.5, jfi_weight: float = 0.1):
         """
         Args:
             alpha: Weight for accuracy contribution
             beta: Weight for fairness contribution
+            jfi_weight: Weight for JFI regularization (default 0.1 = 10% penalty)
         """
         self.alpha = alpha
         self.beta = beta
+        self.jfi_weight = jfi_weight
         assert abs(alpha + beta - 1.0) < 1e-6, "alpha + beta must equal 1.0"
+        
+        logger.info(f"FairnessContributionScorer initialized: alpha={alpha:.2f}, "
+                   f"beta={beta:.2f}, jfi_weight={jfi_weight:.2f}")
         
     def compute_accuracy_contribution(
         self,
@@ -42,7 +60,11 @@ class FairnessContributionScorer:
         global_accuracy: float
     ) -> List[float]:
         """
-        Compute each client's contribution to global accuracy
+        Compute each client's contribution to global accuracy (ENHANCED).
+        
+        Now uses:
+        1. Percentage-based improvements: (client_acc - global_acc) / global_acc
+        2. JFI regularization: Penalize outliers if JFI < 0.85
         
         Args:
             client_accuracies: List of client accuracies
@@ -54,12 +76,53 @@ class FairnessContributionScorer:
         if not client_accuracies:
             return []
         
-        # Normalize client accuracies relative to global accuracy
+        # Prevent division by zero
+        if global_accuracy < 1e-6:
+            global_accuracy = 0.01
+        
+        # Compute percentage-based improvements (NEW!)
         contributions = []
         for acc in client_accuracies:
-            # Contribution = how much better than global average
-            contribution = max(0, acc - global_accuracy + 0.1)  # Add small constant to avoid all zeros
+            # Percentage improvement = (client - global) / global
+            # Positive = better than global, Negative = worse than global
+            pct_improvement = (acc - global_accuracy) / global_accuracy
+            
+            # Convert to contribution score (must be non-negative)
+            # Add small offset to keep all contributions positive
+            contribution = max(0.01, pct_improvement + 0.5)  # Offset ensures min 0.01
             contributions.append(contribution)
+        
+        # Apply JFI regularization (NEW!)
+        jfi = compute_jains_fairness_index(contributions)
+        
+        if jfi < 0.85:  # Unfair distribution detected
+            # Apply progressive penalty based on deviation from mean
+            mean_contrib = np.mean(contributions)
+            std_contrib = np.std(contributions)
+            
+            if std_contrib > 0:
+                regularized_contributions = []
+                for contrib in contributions:
+                    z_score = (contrib - mean_contrib) / std_contrib
+                    
+                    # Penalize outliers (|z| > 1.5), boost middle performers
+                    if abs(z_score) > 1.5:
+                        # Strong penalty for extreme outliers
+                        penalty = 1.0 - (self.jfi_weight * abs(z_score))
+                        regularized_contrib = contrib * max(0.5, penalty)
+                    elif abs(z_score) < 0.5:
+                        # Boost middle performers to improve fairness
+                        boost = 1.0 + (self.jfi_weight * 0.5)
+                        regularized_contrib = contrib * boost
+                    else:
+                        # No change for moderate performers
+                        regularized_contrib = contrib
+                    
+                    regularized_contributions.append(max(0.01, regularized_contrib))
+                
+                contributions = regularized_contributions
+                jfi_after = compute_jains_fairness_index(contributions)
+                logger.info(f"JFI regularization applied: {jfi:.4f} → {jfi_after:.4f}")
         
         # Normalize to sum to 1
         total = sum(contributions) if sum(contributions) > 0 else 1.0
@@ -73,7 +136,12 @@ class FairnessContributionScorer:
         global_fairness_score: Dict[str, float]
     ) -> List[float]:
         """
-        Compute each client's contribution to global fairness
+        Compute each client's contribution to global fairness (ENHANCED).
+        
+        Now uses:
+        1. Weighted fairness aggregation: 0.4×DP + 0.4×EO + 0.2×CB
+        2. Percentage-based improvements: (global - client) / global
+        3. JFI regularization on fairness contributions
         
         Args:
             client_fairness_scores: List of client fairness metric dicts
@@ -87,32 +155,69 @@ class FairnessContributionScorer:
         
         contributions = []
         
-        # Metrics where lower is better (violations)
-        violation_metrics = ['demographic_parity', 'equalized_odds', 'class_balance', 'accuracy_std']
+        # Weighted metrics (NEW!)
+        metric_weights = {
+            'demographic_parity': 0.4,
+            'equalized_odds': 0.4,
+            'class_balance': 0.2
+        }
         
         for client_metrics in client_fairness_scores:
-            # Compute average fairness improvement across metrics
-            # Lower violation = better fairness = higher contribution
-            fairness_improvement = 0.0
-            n_metrics = 0
+            # Compute weighted fairness improvement
+            weighted_improvement = 0.0
+            total_weight = 0.0
             
-            for metric_name in violation_metrics:
+            for metric_name, weight in metric_weights.items():
                 if metric_name in global_fairness_score and metric_name in client_metrics:
                     global_value = global_fairness_score[metric_name]
                     client_value = client_metrics[metric_name]
                     
-                    # Improvement = reduction in violation
-                    # If client has lower violation than global, that's good
-                    improvement = max(0, global_value - client_value + 0.1)  # Add small constant
-                    fairness_improvement += improvement
-                    n_metrics += 1
+                    # Prevent division by zero
+                    if global_value < 1e-6:
+                        global_value = 0.01
+                    
+                    # Percentage improvement (NEW!)
+                    # Violation reduction = (global - client) / global
+                    # Positive = client is fairer, Negative = client is worse
+                    pct_improvement = (global_value - client_value) / global_value
+                    
+                    # Weight this metric's contribution
+                    weighted_improvement += weight * pct_improvement
+                    total_weight += weight
             
-            if n_metrics > 0:
-                fairness_improvement /= n_metrics
-            else:
-                fairness_improvement = 0.1  # Small default value
+            if total_weight > 0:
+                weighted_improvement /= total_weight
             
-            contributions.append(fairness_improvement)
+            # Convert to contribution score (must be non-negative)
+            contribution = max(0.01, weighted_improvement + 0.5)  # Offset ensures min 0.01
+            contributions.append(contribution)
+        
+        # Apply JFI regularization (NEW!)
+        jfi = compute_jains_fairness_index(contributions)
+        
+        if jfi < 0.85:
+            mean_contrib = np.mean(contributions)
+            std_contrib = np.std(contributions)
+            
+            if std_contrib > 0:
+                regularized_contributions = []
+                for contrib in contributions:
+                    z_score = (contrib - mean_contrib) / std_contrib
+                    
+                    if abs(z_score) > 1.5:
+                        penalty = 1.0 - (self.jfi_weight * abs(z_score))
+                        regularized_contrib = contrib * max(0.5, penalty)
+                    elif abs(z_score) < 0.5:
+                        boost = 1.0 + (self.jfi_weight * 0.5)
+                        regularized_contrib = contrib * boost
+                    else:
+                        regularized_contrib = contrib
+                    
+                    regularized_contributions.append(max(0.01, regularized_contrib))
+                
+                contributions = regularized_contributions
+                jfi_after = compute_jains_fairness_index(contributions)
+                logger.info(f"JFI fairness regularization: {jfi:.4f} → {jfi_after:.4f}")
         
         # Normalize to sum to 1
         total = sum(contributions) if sum(contributions) > 0 else 1.0
