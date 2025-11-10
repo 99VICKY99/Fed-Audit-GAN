@@ -315,22 +315,19 @@ def main():
                     img_shape=img_shape
                 )
                 
-                # IMPROVED DCGAN TRAINING
-                # Train for MORE epochs with better hyperparameters for higher quality samples
-                dcgan_epochs = max(args.n_audit_steps * 2, 200)  # At least 200 epochs
-                print(f"Training DCGAN for {dcgan_epochs} epochs (2x audit steps for better quality)...")
+                print(f"Training DCGAN for {args.n_audit_steps} epochs...")
                 
                 # Train DCGAN to generate synthetic fairness probes
                 generator, discriminator = train_generator(
                     generator=generator,
                     discriminator=discriminator,
                     dataloader=val_loader,
-                    n_epochs=dcgan_epochs,  # More epochs = better quality
+                    n_epochs=args.n_audit_steps,  # Use default audit steps (usually 100)
                     device=args.device,
-                    lr=0.0001,  # Lower LR for stability
+                    lr=0.0002,  # Standard DCGAN learning rate
                     b1=0.5,
                     b2=0.999,
-                    sample_interval=max(dcgan_epochs // 5, 1)
+                    sample_interval=max(args.n_audit_steps // 5, 1)
                 )
                 
                 # Generate synthetic samples for fairness auditing

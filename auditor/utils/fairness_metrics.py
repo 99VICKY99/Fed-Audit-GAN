@@ -68,62 +68,53 @@ class FairnessAuditor:
         """
         Compute demographic parity violation (DCGAN mode).
         
-        Measures if positive prediction rates are equal across groups.
-        Uses synthetic labels as sensitive attributes (demographic groups).
+        Measures if positive prediction rates are equal across demographic groups.
+        Split classes 0-4 vs 5-9 as two synthetic demographic groups.
         
         Args:
             model: Model to audit
             dataloader: Data loader with samples
-            sensitive_attribute: Tensor of sensitive attributes (shape: [n_samples])
+            sensitive_attribute: Tensor of sensitive attributes (ignored, uses targets)
             
         Returns:
             Demographic parity violation score (0.0 = perfect fairness)
         """
         model.eval()
         
-        predictions_by_group = {i: [] for i in range(self.num_classes)}
+        # Collect all predictions and targets
+        all_predictions = []
+        all_targets = []
         
         with torch.no_grad():
-            sample_idx = 0
             for data, target in dataloader:
                 data, target = data.to(self.device), target.to(self.device)
-                
                 output = model(data)
                 pred = output.argmax(dim=1)
                 
-                # Use sensitive attribute as grouping variable
-                for i in range(len(pred)):
-                    if sensitive_attribute is not None and sample_idx < len(sensitive_attribute):
-                        group = sensitive_attribute[sample_idx].item()
-                    else:
-                        # Fallback: use target labels as proxy groups
-                        group = target[i].item()
-                    
-                    if group < self.num_classes:
-                        predictions_by_group[group].append(pred[i].item())
-                    
-                    sample_idx += 1
+                all_predictions.extend(pred.cpu().numpy())
+                all_targets.extend(target.cpu().numpy())
         
-        # Compute selection rates for each group
-        selection_rates = []
-        for group, preds in predictions_by_group.items():
-            if len(preds) > 0:
-                class_counts = {c: 0 for c in range(self.num_classes)}
-                for p in preds:
-                    if p < self.num_classes:
-                        class_counts[p] += 1
-                
-                total = len(preds)
-                distribution = [class_counts[c] / total for c in range(self.num_classes)]
-                
-                # Compute entropy as selection rate proxy
-                entropy = -sum(p * np.log(p + 1e-10) for p in distribution if p > 0)
-                selection_rates.append(entropy)
+        all_predictions = np.array(all_predictions)
+        all_targets = np.array(all_targets)
         
-        if len(selection_rates) < 2:
+        if len(all_predictions) == 0:
             return 0.0
         
-        dp_violation = float(np.std(selection_rates))
+        # Split into synthetic demographic groups
+        # Group A = classes 0-4, Group B = classes 5-9
+        group_a_mask = all_targets < 5
+        group_b_mask = all_targets >= 5
+        
+        if group_a_mask.sum() == 0 or group_b_mask.sum() == 0:
+            return 0.0
+        
+        # "Positive" outcome = predicted as high-value class (5-9)
+        group_a_positive_rate = (all_predictions[group_a_mask] >= 5).mean()
+        group_b_positive_rate = (all_predictions[group_b_mask] >= 5).mean()
+        
+        # Demographic parity violation = difference in positive rates
+        dp_violation = abs(float(group_a_positive_rate) - float(group_b_positive_rate))
+        
         return dp_violation
     
     def compute_equalized_odds(
@@ -135,56 +126,85 @@ class FairnessAuditor:
         """
         Compute equalized odds violation (DCGAN mode).
         
-        Measures if TPR and FPR are equal across groups.
-        Uses synthetic labels as sensitive attributes (demographic groups).
+        Measures if TPR and FPR are equal across demographic groups.
+        Split classes 0-4 vs 5-9 as two synthetic demographic groups.
         
         Args:
             model: Model to audit
             dataloader: Data loader with samples
-            sensitive_attribute: Tensor of sensitive attributes (shape: [n_samples])
+            sensitive_attribute: Tensor of sensitive attributes (ignored, uses targets)
             
         Returns:
             Equalized odds violation score (0.0 = perfect fairness)
         """
         model.eval()
         
-        correct_by_group = {i: 0 for i in range(self.num_classes)}
-        total_by_group = {i: 0 for i in range(self.num_classes)}
+        # Collect all predictions and targets
+        all_predictions = []
+        all_targets = []
         
         with torch.no_grad():
-            sample_idx = 0
             for data, target in dataloader:
                 data, target = data.to(self.device), target.to(self.device)
-                
                 output = model(data)
                 pred = output.argmax(dim=1)
                 
-                # Use sensitive attribute as grouping variable
-                for i in range(len(pred)):
-                    if sensitive_attribute is not None and sample_idx < len(sensitive_attribute):
-                        group = sensitive_attribute[sample_idx].item()
-                    else:
-                        # Fallback: use target labels as proxy groups
-                        group = target[i].item()
-                    
-                    if group < self.num_classes:
-                        total_by_group[group] += 1
-                        if pred[i] == target[i]:
-                            correct_by_group[group] += 1
-                    
-                    sample_idx += 1
+                all_predictions.extend(pred.cpu().numpy())
+                all_targets.extend(target.cpu().numpy())
         
-        # Compute accuracy for each group
-        accuracies = []
-        for group in range(self.num_classes):
-            if total_by_group[group] > 0:
-                acc = correct_by_group[group] / total_by_group[group]
-                accuracies.append(acc)
+        all_predictions = np.array(all_predictions)
+        all_targets = np.array(all_targets)
         
-        if len(accuracies) < 2:
+        if len(all_predictions) == 0:
             return 0.0
         
-        eo_violation = float(np.std(accuracies))
+        # Split into synthetic demographic groups
+        group_a_mask = all_targets < 5
+        group_b_mask = all_targets >= 5
+        
+        if group_a_mask.sum() == 0 or group_b_mask.sum() == 0:
+            return 0.0
+        
+        # Group A statistics
+        group_a_preds = all_predictions[group_a_mask]
+        group_a_true = all_targets[group_a_mask]
+        
+        # TPR: P(pred >= 5 | true >= 5)
+        a_positive_mask = group_a_true >= 5
+        if a_positive_mask.sum() > 0:
+            group_a_tpr = (group_a_preds[a_positive_mask] >= 5).mean()
+        else:
+            group_a_tpr = 0.0
+        
+        # FPR: P(pred >= 5 | true < 5)
+        a_negative_mask = group_a_true < 5
+        if a_negative_mask.sum() > 0:
+            group_a_fpr = (group_a_preds[a_negative_mask] >= 5).mean()
+        else:
+            group_a_fpr = 0.0
+        
+        # Group B statistics
+        group_b_preds = all_predictions[group_b_mask]
+        group_b_true = all_targets[group_b_mask]
+        
+        b_positive_mask = group_b_true >= 5
+        if b_positive_mask.sum() > 0:
+            group_b_tpr = (group_b_preds[b_positive_mask] >= 5).mean()
+        else:
+            group_b_tpr = 0.0
+        
+        b_negative_mask = group_b_true < 5
+        if b_negative_mask.sum() > 0:
+            group_b_fpr = (group_b_preds[b_negative_mask] >= 5).mean()
+        else:
+            group_b_fpr = 0.0
+        
+        # Equalized Odds violation = average of TPR and FPR gaps
+        tpr_gap = abs(float(group_a_tpr) - float(group_b_tpr))
+        fpr_gap = abs(float(group_a_fpr) - float(group_b_fpr))
+        
+        eo_violation = (tpr_gap + fpr_gap) / 2.0
+        
         return eo_violation
     
     def compute_class_balance(
@@ -195,17 +215,20 @@ class FairnessAuditor:
         """
         Compute class balance metric (DCGAN mode).
         
+        Measures how balanced the model's predictions are across all classes.
+        Lower is better (more uniform).
+        
         Args:
             model: Model to audit
             dataloader: Data loader with samples
             
         Returns:
-            Class balance score
+            Class balance score (0.0 = perfectly uniform)
         """
         model.eval()
         
-        class_counts = {i: 0 for i in range(self.num_classes)}
-        total = 0
+        class_counts = np.zeros(self.num_classes)
+        total_samples = 0
         
         with torch.no_grad():
             for data, _ in dataloader:
@@ -213,28 +236,24 @@ class FairnessAuditor:
                 output = model(data)
                 pred = output.argmax(dim=1)
                 
-                for p in pred:
-                    p_item = p.item()
-                    if p_item < self.num_classes:
-                        class_counts[p_item] += 1
-                        total += 1
+                for c in range(self.num_classes):
+                    class_counts[c] += (pred == c).sum().item()
+                
+                total_samples += data.size(0)
         
-        if total == 0:
+        if total_samples == 0:
             return 0.0
         
         # Compute class distribution
-        class_probs = [class_counts[i] / total for i in range(self.num_classes)]
+        class_probs = class_counts / total_samples
         
         # Ideal uniform distribution
-        uniform_prob = 1.0 / self.num_classes
+        ideal_prob = 1.0 / self.num_classes
         
-        # Compute KL divergence from uniform
-        kl_div = sum(
-            p * np.log((p + 1e-10) / uniform_prob) if p > 0 else 0 
-            for p in class_probs
-        )
+        # Measure deviation from uniform (L1 distance / 2)
+        imbalance = float(np.sum(np.abs(class_probs - ideal_prob)) / 2.0)
         
-        return float(kl_div)
+        return imbalance
     
     def audit_model(
         self,
