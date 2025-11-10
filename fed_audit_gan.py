@@ -442,9 +442,9 @@ def main():
             alpha = 1.0 - args.gamma  # Accuracy weight
             beta = args.gamma          # Fairness weight
             
-            logger.info(f"Computing contribution scores with gamma={args.gamma:.2f}")
-            logger.info(f"  → Accuracy weight (alpha): {alpha:.2f}")
-            logger.info(f"  → Fairness weight (beta):  {beta:.2f}")
+            print(f"Computing contribution scores with gamma={args.gamma:.2f}")
+            print(f"  → Accuracy weight (alpha): {alpha:.2f}")
+            print(f"  → Fairness weight (beta):  {beta:.2f}")
             
             scorer = FairnessContributionScorer(
                 alpha=alpha,
@@ -458,11 +458,11 @@ def main():
                 global_fairness_score=fairness_metrics
             )
             
-            logger.info(f"✓ Phase 3 complete. Client weights computed:")
-            logger.info(f"  → Weights: {[f'{w:.4f}' for w in final_weights]}")
-            logger.info(f"  → Max: {max(final_weights):.4f}, Min: {min(final_weights):.4f}")
-            logger.info(f"  → Std Dev: {np.std(final_weights):.4f}")
-            logger.info(f"  → Weight variance indicates fairness-driven reweighting")
+            print(f"✓ Phase 3 complete. Client weights computed:")
+            print(f"  Weights: {[f'{w:.4f}' for w in final_weights]}")
+            print(f"  Max: {max(final_weights):.4f}, Min: {min(final_weights):.4f}")
+            print(f"  Std Dev: {np.std(final_weights):.4f}")
+            print(f"  Weight variance indicates fairness-driven reweighting")
             
             # Store statistics
             avg_fairness = np.mean([
