@@ -68,37 +68,41 @@ class FairnessAuditor:
         """
         Compute demographic parity violation (DCGAN mode).
         
+        Measures if positive prediction rates are equal across groups.
+        Uses synthetic labels as sensitive attributes (demographic groups).
+        
         Args:
             model: Model to audit
             dataloader: Data loader with samples
-            sensitive_attribute: Sensitive attribute for each sample
+            sensitive_attribute: Tensor of sensitive attributes (shape: [n_samples])
             
         Returns:
-            Demographic parity violation score
+            Demographic parity violation score (0.0 = perfect fairness)
         """
         model.eval()
         
         predictions_by_group = {i: [] for i in range(self.num_classes)}
         
         with torch.no_grad():
-            batch_idx = 0
+            sample_idx = 0
             for data, target in dataloader:
                 data, target = data.to(self.device), target.to(self.device)
                 
                 output = model(data)
                 pred = output.argmax(dim=1)
                 
-                if sensitive_attribute is not None and batch_idx < len(sensitive_attribute):
-                    groups = sensitive_attribute[batch_idx]
-                else:
-                    groups = target
-                
+                # Use sensitive attribute as grouping variable
                 for i in range(len(pred)):
-                    group = groups[i].item() if isinstance(groups, torch.Tensor) else target[i].item()
+                    if sensitive_attribute is not None and sample_idx < len(sensitive_attribute):
+                        group = sensitive_attribute[sample_idx].item()
+                    else:
+                        # Fallback: use target labels as proxy groups
+                        group = target[i].item()
+                    
                     if group < self.num_classes:
                         predictions_by_group[group].append(pred[i].item())
-                
-                batch_idx += 1
+                    
+                    sample_idx += 1
         
         # Compute selection rates for each group
         selection_rates = []
@@ -131,13 +135,16 @@ class FairnessAuditor:
         """
         Compute equalized odds violation (DCGAN mode).
         
+        Measures if TPR and FPR are equal across groups.
+        Uses synthetic labels as sensitive attributes (demographic groups).
+        
         Args:
             model: Model to audit
             dataloader: Data loader with samples
-            sensitive_attribute: Sensitive attribute for each sample
+            sensitive_attribute: Tensor of sensitive attributes (shape: [n_samples])
             
         Returns:
-            Equalized odds violation score
+            Equalized odds violation score (0.0 = perfect fairness)
         """
         model.eval()
         
@@ -145,26 +152,27 @@ class FairnessAuditor:
         total_by_group = {i: 0 for i in range(self.num_classes)}
         
         with torch.no_grad():
-            batch_idx = 0
+            sample_idx = 0
             for data, target in dataloader:
                 data, target = data.to(self.device), target.to(self.device)
                 
                 output = model(data)
                 pred = output.argmax(dim=1)
                 
-                if sensitive_attribute is not None and batch_idx < len(sensitive_attribute):
-                    groups = sensitive_attribute[batch_idx]
-                else:
-                    groups = target
-                
+                # Use sensitive attribute as grouping variable
                 for i in range(len(pred)):
-                    group = groups[i].item() if isinstance(groups, torch.Tensor) else target[i].item()
+                    if sensitive_attribute is not None and sample_idx < len(sensitive_attribute):
+                        group = sensitive_attribute[sample_idx].item()
+                    else:
+                        # Fallback: use target labels as proxy groups
+                        group = target[i].item()
+                    
                     if group < self.num_classes:
                         total_by_group[group] += 1
                         if pred[i] == target[i]:
                             correct_by_group[group] += 1
-                
-                batch_idx += 1
+                    
+                    sample_idx += 1
         
         # Compute accuracy for each group
         accuracies = []

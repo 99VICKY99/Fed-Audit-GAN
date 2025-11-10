@@ -315,17 +315,22 @@ def main():
                     img_shape=img_shape
                 )
                 
-                print(f"Training DCGAN for {args.n_audit_steps} epochs...")
+                # IMPROVED DCGAN TRAINING
+                # Train for MORE epochs with better hyperparameters for higher quality samples
+                dcgan_epochs = max(args.n_audit_steps * 2, 200)  # At least 200 epochs
+                print(f"Training DCGAN for {dcgan_epochs} epochs (2x audit steps for better quality)...")
                 
                 # Train DCGAN to generate synthetic fairness probes
                 generator, discriminator = train_generator(
                     generator=generator,
                     discriminator=discriminator,
                     dataloader=val_loader,
-                    n_epochs=args.n_audit_steps,
+                    n_epochs=dcgan_epochs,  # More epochs = better quality
                     device=args.device,
-                    lr=0.0002,
-                    sample_interval=max(args.n_audit_steps // 5, 1)
+                    lr=0.0001,  # Lower LR for stability
+                    b1=0.5,
+                    b2=0.999,
+                    sample_interval=max(dcgan_epochs // 5, 1)
                 )
                 
                 # Generate synthetic samples for fairness auditing
@@ -350,10 +355,16 @@ def main():
                 device=args.device
             )
             
+            # CRITICAL FIX: Use synthetic labels as sensitive attributes
+            # This ensures we're measuring fairness across different demographic groups
+            # represented by the generated classes
+            print(f"Using synthetic labels as sensitive attributes for fairness auditing...")
+            
             # Audit global model fairness
             fairness_metrics = auditor.audit_model(
                 model=global_model,
-                dataloader=probe_loader
+                dataloader=probe_loader,
+                sensitive_attribute=synthetic_labels.cpu()  # Pass synthetic labels!
             )
             
             # Store baseline fairness metrics
@@ -402,9 +413,11 @@ def main():
                 client_accuracies.append(client_acc)
                 
                 # Measure fairness on synthetic probes
+                # CRITICAL FIX: Pass synthetic labels as sensitive attributes
                 client_fairness = auditor.audit_model(
                     model=hypothetical_model,
-                    dataloader=probe_loader
+                    dataloader=probe_loader,
+                    sensitive_attribute=synthetic_labels.cpu()  # Pass synthetic labels!
                 )
                 client_fairness_metrics.append(client_fairness)
                 

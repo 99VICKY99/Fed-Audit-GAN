@@ -53,6 +53,7 @@ echo.
 echo Other:
 echo   [Q] Quit
 echo   [H] Help / Custom Parameters
+echo   [T] Test Gamma Parameter (Debug)
 echo.
 set /p choice="Enter your choice: "
 
@@ -352,6 +353,20 @@ if /i "%choice%"=="L" (
     echo.
     echo All CIFAR-10 Dirichlet Non-IID experiments complete!
     goto END
+)
+if /i "%choice%"=="T" (
+    echo.
+    echo ========================================================================
+    echo Testing Gamma Parameter
+    echo ========================================================================
+    echo This will run a debug script to verify the gamma parameter is working
+    echo correctly by testing with simulated client contributions.
+    echo.
+    pause
+    "%PYTHON_PATH%" scripts\debug_gamma_effect.py
+    echo.
+    pause
+    goto MENU
 )
 if /i "%choice%"=="Q" (
     echo Exiting...
