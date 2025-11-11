@@ -472,11 +472,18 @@ def main():
             
             global_accuracy = correct / total if total > 0 else 0.0
             
-            # Use FairnessContributionScorer to compute weights with gamma-based weighting
-            alpha = 1.0 - args.gamma  # Accuracy weight
-            beta = args.gamma          # Fairness weight
+            # FIX 5: Progressive gamma scaling - increase fairness focus over time
+            effective_gamma = args.gamma
+            if round_idx >= 10:
+                # After round 10, make gamma MORE aggressive (up to 20% increase)
+                effective_gamma = min(0.95, args.gamma * 1.15)
+                print(f"📈 Progressive gamma scaling: {args.gamma:.2f} → {effective_gamma:.2f} (round {round_idx+1})")
             
-            print(f"Computing contribution scores with gamma={args.gamma:.2f}")
+            # Use FairnessContributionScorer to compute weights with gamma-based weighting
+            alpha = 1.0 - effective_gamma  # Accuracy weight
+            beta = effective_gamma          # Fairness weight
+            
+            print(f"Computing contribution scores with gamma={effective_gamma:.2f}")
             print(f"  → Accuracy weight (alpha): {alpha:.2f}")
             print(f"  → Fairness weight (beta):  {beta:.2f}")
             

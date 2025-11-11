@@ -80,49 +80,63 @@ class FairnessContributionScorer:
         if global_accuracy < 1e-6:
             global_accuracy = 0.01
         
-        # Compute percentage-based improvements (NEW!)
+        # Compute percentage-based improvements with EXPONENTIAL PENALTY (FIXED!)
         contributions = []
         for acc in client_accuracies:
             # Percentage improvement = (client - global) / global
             # Positive = better than global, Negative = worse than global
             pct_improvement = (acc - global_accuracy) / global_accuracy
             
-            # Convert to contribution score (must be non-negative)
-            # Add small offset to keep all contributions positive
-            contribution = max(0.01, pct_improvement + 0.5)  # Offset ensures min 0.01
+            # FIX 1: Use EXPONENTIAL scaling instead of linear offset
+            # This creates AGGRESSIVE penalties for bad clients
+            if pct_improvement >= 0:
+                # Good client: reward proportionally
+                contribution = 1.0 + pct_improvement
+            else:
+                # Bad client: exponential penalty
+                # e^(-2x) means -50% improvement → 0.37 (harsh!)
+                contribution = np.exp(pct_improvement * 2.0)
+            
+            # Ensure minimum is very small (not 0.01 which is too generous)
+            contribution = max(1e-6, contribution)
             contributions.append(contribution)
         
-        # Apply JFI regularization (NEW!)
+        # Apply SELECTIVE JFI regularization (FIXED!)
+        # FIX 2: Only penalize BAD outliers, reward GOOD outliers
         jfi = compute_jains_fairness_index(contributions)
         
         if jfi < 0.85:  # Unfair distribution detected
-            # Apply progressive penalty based on deviation from mean
             mean_contrib = np.mean(contributions)
             std_contrib = np.std(contributions)
             
             if std_contrib > 0:
                 regularized_contributions = []
-                for contrib in contributions:
+                for i, contrib in enumerate(contributions):
                     z_score = (contrib - mean_contrib) / std_contrib
+                    acc = client_accuracies[i]
                     
-                    # Penalize outliers (|z| > 1.5), boost middle performers
-                    if abs(z_score) > 1.5:
-                        # Strong penalty for extreme outliers
-                        penalty = 1.0 - (self.jfi_weight * abs(z_score))
-                        regularized_contrib = contrib * max(0.5, penalty)
+                    # Determine if this is a good or bad outlier
+                    if acc < global_accuracy and abs(z_score) > 1.5:
+                        # BAD outlier (low accuracy): HARSH penalty
+                        penalty = 0.1 ** abs(z_score)  # Exponential suppression
+                        regularized_contrib = contrib * penalty
+                    elif acc > global_accuracy and z_score > 1.5:
+                        # GOOD outlier (high accuracy): reward it!
+                        boost = 1.0 + (self.jfi_weight * z_score)
+                        regularized_contrib = contrib * boost
                     elif abs(z_score) < 0.5:
-                        # Boost middle performers to improve fairness
-                        boost = 1.0 + (self.jfi_weight * 0.5)
+                        # Boost middle performers slightly
+                        boost = 1.0 + (self.jfi_weight * 0.3)
                         regularized_contrib = contrib * boost
                     else:
                         # No change for moderate performers
                         regularized_contrib = contrib
                     
-                    regularized_contributions.append(max(0.01, regularized_contrib))
+                    regularized_contributions.append(max(1e-6, regularized_contrib))
                 
                 contributions = regularized_contributions
                 jfi_after = compute_jains_fairness_index(contributions)
-                logger.info(f"JFI regularization applied: {jfi:.4f} → {jfi_after:.4f}")
+                logger.info(f"Selective JFI regularization: {jfi:.4f} → {jfi_after:.4f}")
         
         # Normalize to sum to 1
         total = sum(contributions) if sum(contributions) > 0 else 1.0
@@ -188,11 +202,20 @@ class FairnessContributionScorer:
             if total_weight > 0:
                 weighted_improvement /= total_weight
             
-            # Convert to contribution score (must be non-negative)
-            contribution = max(0.01, weighted_improvement + 0.5)  # Offset ensures min 0.01
+            # FIX 1: Use EXPONENTIAL scaling for fairness too (CRITICAL!)
+            if weighted_improvement >= 0:
+                # Good client: fairer than global
+                contribution = 1.0 + weighted_improvement
+            else:
+                # Bad client: less fair than global
+                # Exponential penalty is CRUCIAL for fairness
+                contribution = np.exp(weighted_improvement * 2.0)
+            
+            contribution = max(1e-6, contribution)
             contributions.append(contribution)
         
-        # Apply JFI regularization (NEW!)
+        # Apply SELECTIVE JFI regularization for fairness (FIXED!)
+        # FIX 2: Separate treatment for fair vs unfair outliers
         jfi = compute_jains_fairness_index(contributions)
         
         if jfi < 0.85:
@@ -201,27 +224,53 @@ class FairnessContributionScorer:
             
             if std_contrib > 0:
                 regularized_contributions = []
-                for contrib in contributions:
+                for i, contrib in enumerate(contributions):
                     z_score = (contrib - mean_contrib) / std_contrib
+                    client_dp = client_fairness_scores[i]['demographic_parity']
+                    global_dp = global_fairness_score['demographic_parity']
                     
-                    if abs(z_score) > 1.5:
-                        penalty = 1.0 - (self.jfi_weight * abs(z_score))
-                        regularized_contrib = contrib * max(0.5, penalty)
+                    # Determine if this is a fair or unfair client
+                    if client_dp > global_dp * 1.5 and abs(z_score) > 1.5:
+                        # UNFAIR outlier (1.5x worse than global): CRUSH IT
+                        penalty = 0.05 ** abs(z_score)  # Super harsh exponential
+                        regularized_contrib = contrib * penalty
+                    elif client_dp < global_dp * 0.5 and z_score > 1.5:
+                        # VERY FAIR outlier (2x better than global): BOOST IT
+                        boost = 1.0 + (self.jfi_weight * 2.0 * z_score)
+                        regularized_contrib = contrib * boost
                     elif abs(z_score) < 0.5:
-                        boost = 1.0 + (self.jfi_weight * 0.5)
+                        # Slight boost for middle performers
+                        boost = 1.0 + (self.jfi_weight * 0.3)
                         regularized_contrib = contrib * boost
                     else:
                         regularized_contrib = contrib
                     
-                    regularized_contributions.append(max(0.01, regularized_contrib))
+                    regularized_contributions.append(max(1e-6, regularized_contrib))
                 
                 contributions = regularized_contributions
                 jfi_after = compute_jains_fairness_index(contributions)
-                logger.info(f"JFI fairness regularization: {jfi:.4f} → {jfi_after:.4f}")
+                logger.info(f"Selective fairness JFI: {jfi:.4f} → {jfi_after:.4f}")
+        
+        # FIX 4: Hard threshold - zero out extremely unfair clients BEFORE normalization
+        if global_fairness_score is not None and 'demographic_parity' in global_fairness_score:
+            global_dp = global_fairness_score['demographic_parity']
+            fairness_threshold = max(global_dp * 2.0, 0.3)  # 2x worse OR absolute 0.3
+            
+            for i, client_metrics in enumerate(client_fairness_scores):
+                if 'demographic_parity' in client_metrics:
+                    client_dp = client_metrics['demographic_parity']
+                    if client_dp > fairness_threshold:
+                        # This client is UNACCEPTABLY unfair - suppress to near-zero
+                        contributions[i] = 1e-9
+                        logger.info(f"Client {i} suppressed: DP={client_dp:.4f} > threshold={fairness_threshold:.4f}")
+        
+        # FIX 3: Power normalization to amplify differences
+        power = 2.5  # Aggressive amplification for fairness
+        powered_contribs = [c ** power for c in contributions]
         
         # Normalize to sum to 1
-        total = sum(contributions) if sum(contributions) > 0 else 1.0
-        contributions = [c / total for c in contributions]
+        total = sum(powered_contribs) if sum(powered_contribs) > 0 else 1.0
+        contributions = [c / total for c in powered_contribs]
         
         return contributions
     
