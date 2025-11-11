@@ -315,6 +315,38 @@ class FairnessContributionScorer:
         total = sum(combined_scores) if sum(combined_scores) > 0 else 1.0
         combined_scores = [s / total for s in combined_scores]
         
+        # NEW: Entropy regularization to prevent oligarchy at high gamma
+        # When beta (fairness weight) >= 0.9, apply diversity protection
+        if self.beta >= 0.9:
+            n_clients = len(combined_scores)
+            min_weight = 0.02  # Every client gets at least 2%
+            entropy_reg = 0.15  # Blend 15% uniform distribution
+            
+            logger.info(f"High fairness mode (beta={self.beta:.2f}): Applying entropy regularization")
+            logger.info(f"  Before regularization: max={max(combined_scores):.4f}, min={min(combined_scores):.4f}")
+            
+            # Step 1: Enforce minimum weight
+            combined_scores = [max(s, min_weight) for s in combined_scores]
+            
+            # Step 2: Blend with uniform distribution to encourage diversity
+            uniform_dist = [1.0 / n_clients] * n_clients
+            combined_scores = [
+                (1 - entropy_reg) * s + entropy_reg * u
+                for s, u in zip(combined_scores, uniform_dist)
+            ]
+            
+            # Step 3: Renormalize
+            total = sum(combined_scores)
+            combined_scores = [s / total for s in combined_scores]
+            
+            # Compute concentration metrics
+            max_weight = max(combined_scores)
+            min_weight_actual = min(combined_scores)
+            concentration_ratio = max_weight / min_weight_actual if min_weight_actual > 0 else float('inf')
+            
+            logger.info(f"  After regularization: max={max_weight:.4f}, min={min_weight_actual:.4f}")
+            logger.info(f"  Concentration ratio: {concentration_ratio:.1f}x (lower is more democratic)")
+        
         logger.info(f"Accuracy contributions: {[f'{s:.4f}' for s in acc_contributions]}")
         logger.info(f"Fairness contributions: {[f'{s:.4f}' for s in fair_contributions]}")
         logger.info(f"Combined contribution scores: {[f'{s:.4f}' for s in combined_scores]}")

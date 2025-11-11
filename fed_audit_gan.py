@@ -473,12 +473,21 @@ def main():
             global_accuracy = correct / total if total > 0 else 0.0
             
             # FIX 5: Progressive gamma scaling - increase fairness focus over time
-            # ULTRA-AGGRESSIVE: Start earlier and scale faster
+            # Enhanced for high gamma: use JFI weight amplification when gamma ≥ 0.95
             effective_gamma = args.gamma
-            if round_idx >= 5:  # Start at round 5 instead of 10
-                # Scale more aggressively: 25% increase (was 15%)
-                effective_gamma = min(0.98, args.gamma * 1.25)
-                print(f"📈 Progressive gamma scaling: {args.gamma:.2f} → {effective_gamma:.2f} (round {round_idx+1})")
+            jfi_regularization_weight = 0.5 if round_idx < 10 else 0.4  # Base JFI weight
+            
+            if round_idx >= 5:  # Start progressive scaling at round 5
+                if args.gamma >= 0.95:
+                    # At very high gamma, can't scale gamma further
+                    # Instead, amplify JFI regularization weight
+                    jfi_boost = min(1.2, 1.0 + 0.04 * (round_idx - 5))  # 4% per round, max 20%
+                    jfi_regularization_weight = min(0.8, jfi_regularization_weight * jfi_boost)
+                    print(f"📈 High-gamma amplification: JFI weight boosted to {jfi_regularization_weight:.2f} (round {round_idx+1})")
+                else:
+                    # Standard gamma scaling for gamma < 0.95
+                    effective_gamma = min(0.98, args.gamma * 1.25)
+                    print(f"📈 Progressive gamma scaling: {args.gamma:.2f} → {effective_gamma:.2f} (round {round_idx+1})")
             
             # Use FairnessContributionScorer to compute weights with gamma-based weighting
             alpha = 1.0 - effective_gamma  # Accuracy weight
@@ -487,9 +496,6 @@ def main():
             print(f"Computing contribution scores with gamma={effective_gamma:.2f}")
             print(f"  → Accuracy weight (alpha): {alpha:.2f}")
             print(f"  → Fairness weight (beta):  {beta:.2f}")
-            
-            # FIX 4: ULTRA-STRONG JFI regularization
-            jfi_regularization_weight = 0.5 if round_idx < 10 else 0.4  # Ultra strong (was 0.3, 0.2)
             
             scorer = FairnessContributionScorer(
                 alpha=alpha,
@@ -528,27 +534,22 @@ def main():
                 cumulative_fairness = avg_fairness
             history['cumulative_fairness'].append(cumulative_fairness)
             
-            # NEW: Compute JFI metrics for client-level fairness
-            jfi_accuracy = compute_jains_fairness_index(client_accuracies)
-            jfi_fairness = compute_jains_fairness_index([
-                m['demographic_parity'] for m in client_fairness_metrics
-            ])
-            cv_accuracy = compute_coefficient_of_variation(client_accuracies)
-            cv_fairness = compute_coefficient_of_variation([
-                m['demographic_parity'] for m in client_fairness_metrics
-            ])
+            # Compute fairness distribution metrics
+            fairness_values = [m['demographic_parity'] for m in client_fairness_metrics]
             
-            # Store JFI metrics in history
-            if 'jfi_accuracy' not in history:
-                history['jfi_accuracy'] = []
+            jfi_fairness = compute_jains_fairness_index(fairness_values)
+            fairness_variance = np.var(fairness_values)
+            fairness_max_min_gap = np.max(fairness_values) - np.min(fairness_values)
+            
+            # Store fairness metrics in history
+            if 'jfi_fairness' not in history:
                 history['jfi_fairness'] = []
-                history['cv_accuracy'] = []
-                history['cv_fairness'] = []
+                history['fairness_variance'] = []
+                history['fairness_max_min_gap'] = []
             
-            history['jfi_accuracy'].append(jfi_accuracy)
             history['jfi_fairness'].append(jfi_fairness)
-            history['cv_accuracy'].append(cv_accuracy)
-            history['cv_fairness'].append(cv_fairness)
+            history['fairness_variance'].append(fairness_variance)
+            history['fairness_max_min_gap'].append(fairness_max_min_gap)
             
             # Compute fairness trend
             if len(history['fairness_scores']) >= 2:
@@ -564,9 +565,9 @@ def main():
             print(f"  Avg Client Accuracy: {np.mean(client_accuracies):.4f}")
             print(f"  Avg Client Fairness: {avg_fairness:.4f} {trend_symbol}")
             print(f"  Cumulative Fairness (3-round avg): {cumulative_fairness:.4f} {cumulative_trend}")
-            print(f"  JFI (Accuracy): {jfi_accuracy:.4f} [1.0=perfectly fair]")
             print(f"  JFI (Fairness): {jfi_fairness:.4f} [1.0=perfectly fair]")
-            print(f"  CV (Accuracy): {cv_accuracy:.4f} [lower=more fair]")
+            print(f"  Variance (Fairness): {fairness_variance:.6f} [lower=more fair]")
+            print(f"  Max-Min Gap (Fairness): {fairness_max_min_gap:.6f} [lower=more fair]")
             print(f"  Weights: {[f'{w:.3f}' for w in final_weights]}")
             
             # Phase 4: Multi-Objective Aggregation
@@ -605,8 +606,9 @@ def main():
             print(f"  Baseline Bias: {baseline_bias:.6f}")
             print(f"  Avg Fairness Score: {history['fairness_scores'][-1]:.6f}")
             print(f"  Avg Accuracy Score: {history['accuracy_scores'][-1]:.6f}")
-            print(f"  JFI Accuracy: {history['jfi_accuracy'][-1]:.4f}")
             print(f"  JFI Fairness: {history['jfi_fairness'][-1]:.4f}")
+            print(f"  Fairness Variance: {history['fairness_variance'][-1]:.6f}")
+            print(f"  Fairness Max-Min Gap: {history['fairness_max_min_gap'][-1]:.6f}")
         print(f"{'='*60}\n")
         
         # Log to W&B
@@ -621,12 +623,11 @@ def main():
                 log_dict.update({
                     'baseline_bias': baseline_bias,
                     'avg_fairness_score': history['fairness_scores'][-1],
-                    'cumulative_fairness': history['cumulative_fairness'][-1],  # NEW
+                    'cumulative_fairness': history['cumulative_fairness'][-1],
                     'avg_accuracy_score': history['accuracy_scores'][-1],
-                    'jfi_accuracy': history['jfi_accuracy'][-1],
                     'jfi_fairness': history['jfi_fairness'][-1],
-                    'cv_accuracy': history['cv_accuracy'][-1],
-                    'cv_fairness': history['cv_fairness'][-1]
+                    'fairness_variance': history['fairness_variance'][-1],
+                    'fairness_max_min_gap': history['fairness_max_min_gap'][-1]
                 })
             wandb.log(log_dict)
     
