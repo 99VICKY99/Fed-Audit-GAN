@@ -473,10 +473,11 @@ def main():
             global_accuracy = correct / total if total > 0 else 0.0
             
             # FIX 5: Progressive gamma scaling - increase fairness focus over time
+            # ULTRA-AGGRESSIVE: Start earlier and scale faster
             effective_gamma = args.gamma
-            if round_idx >= 10:
-                # After round 10, make gamma MORE aggressive (up to 20% increase)
-                effective_gamma = min(0.95, args.gamma * 1.15)
+            if round_idx >= 5:  # Start at round 5 instead of 10
+                # Scale more aggressively: 25% increase (was 15%)
+                effective_gamma = min(0.98, args.gamma * 1.25)
                 print(f"📈 Progressive gamma scaling: {args.gamma:.2f} → {effective_gamma:.2f} (round {round_idx+1})")
             
             # Use FairnessContributionScorer to compute weights with gamma-based weighting
@@ -487,8 +488,8 @@ def main():
             print(f"  → Accuracy weight (alpha): {alpha:.2f}")
             print(f"  → Fairness weight (beta):  {beta:.2f}")
             
-            # FIX 4: STRONGER JFI regularization (0.1 → 0.3)
-            jfi_regularization_weight = 0.3 if round_idx < 10 else 0.2  # Strong early, moderate later
+            # FIX 4: ULTRA-STRONG JFI regularization
+            jfi_regularization_weight = 0.5 if round_idx < 10 else 0.4  # Ultra strong (was 0.3, 0.2)
             
             scorer = FairnessContributionScorer(
                 alpha=alpha,

@@ -231,12 +231,12 @@ class FairnessContributionScorer:
                     
                     # Determine if this is a fair or unfair client
                     if client_dp > global_dp * 1.5 and abs(z_score) > 1.5:
-                        # UNFAIR outlier (1.5x worse than global): CRUSH IT
-                        penalty = 0.05 ** abs(z_score)  # Super harsh exponential
+                        # UNFAIR outlier (1.5x worse than global): CRUSH IT HARDER
+                        penalty = 0.01 ** abs(z_score)  # ULTRA harsh exponential (was 0.05)
                         regularized_contrib = contrib * penalty
                     elif client_dp < global_dp * 0.5 and z_score > 1.5:
-                        # VERY FAIR outlier (2x better than global): BOOST IT
-                        boost = 1.0 + (self.jfi_weight * 2.0 * z_score)
+                        # VERY FAIR outlier (2x better than global): BOOST IT MORE
+                        boost = 1.0 + (self.jfi_weight * 3.0 * z_score)  # 3x boost (was 2x)
                         regularized_contrib = contrib * boost
                     elif abs(z_score) < 0.5:
                         # Slight boost for middle performers
@@ -252,9 +252,10 @@ class FairnessContributionScorer:
                 logger.info(f"Selective fairness JFI: {jfi:.4f} → {jfi_after:.4f}")
         
         # FIX 4: Hard threshold - zero out extremely unfair clients BEFORE normalization
+        # ULTRA-AGGRESSIVE: Lower threshold for maximum fairness
         if global_fairness_score is not None and 'demographic_parity' in global_fairness_score:
             global_dp = global_fairness_score['demographic_parity']
-            fairness_threshold = max(global_dp * 2.0, 0.3)  # 2x worse OR absolute 0.3
+            fairness_threshold = max(global_dp * 1.5, 0.2)  # 1.5x worse OR absolute 0.2 (was 2.0, 0.3)
             
             for i, client_metrics in enumerate(client_fairness_scores):
                 if 'demographic_parity' in client_metrics:
@@ -265,7 +266,7 @@ class FairnessContributionScorer:
                         logger.info(f"Client {i} suppressed: DP={client_dp:.4f} > threshold={fairness_threshold:.4f}")
         
         # FIX 3: Power normalization to amplify differences
-        power = 2.5  # Aggressive amplification for fairness
+        power = 3.5  # ULTRA-AGGRESSIVE amplification for fairness (was 2.5)
         powered_contribs = [c ** power for c in contributions]
         
         # Normalize to sum to 1
