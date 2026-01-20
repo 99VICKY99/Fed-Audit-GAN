@@ -1,0 +1,1090 @@
+\documentclass[12pt,a4paper]{report}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{tocloft}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% Code listing settings
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=10pt,
+    breaklines=true,
+    frame=single,
+    tabsize=2
+}
+
+% Python language definition
+\lstdefinelanguage{Python}{
+    keywords={def,class,if,else,elif,for,while,return,import,from,as,try,except,finally,with,lambda,pass,break,continue,yield},
+    keywordstyle=\color{blue}\bfseries,
+    ndkeywords={self,None,True,False},
+    sensitive=true,
+    comment=[l]{\#},
+    morestring=[b]",
+    morestring=[b]'
+}
+
+% Hyperlink settings
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=green,
+}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\leftmark}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Title formatting
+\titleformat{\chapter}[display]
+{\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{20pt}{\Huge}
+
+% Document information
+\title{B.Tech Major Project Report\\[1em]
+\Large Fed-Audit-GAN: Achieving Dynamic Contribution Fairness with Generative Auditing in Federated Learning}
+\author{Vicky Prasad and Shivansh\\
+Roll No.: 22CSE1040 and 22CSE1034\\[1em]
+Under the Supervision of\\
+Dr. Pravati Swain\\[2em]
+Department of Computer Science and Engineering\\
+National Institute of Technology Goa}
+\date{2025}
+
+\begin{document}
+
+% Custom Title page
+\begin{titlepage}
+\centering
+
+\vspace*{0.5cm}
+
+% Title
+{\Huge\bfseries B.Tech Major Project Report}\\[1.5cm]
+
+{\Large\bfseries Fed-Audit-GAN: Achieving Dynamic Contribution}\\[0.3cm]
+{\Large\bfseries Fairness with Generative Auditing}\\[0.3cm]
+{\Large\bfseries in Federated Learning}\\[2cm]
+
+% Author Information
+{\Large\textit{Submitted by}}\\[0.3cm]
+{\Large\bfseries Vicky Prasad (22CSE1040)}\\[0.2cm]
+{\Large\bfseries Shivansh (22CSE1034)}\\[0.2cm]
+{\Large Department of Computer Science and Engineering}\\[0.2cm]
+{\Large National Institute of Technology Goa}\\[1.5cm]
+
+% Supervision
+{\Large\bfseries Under the Guidance of}\\[0.3cm]
+{\Large\bfseries Dr. Pravati Swain}\\[0.2cm]
+{\Large Assistant Professor}\\[0.2cm]
+{\Large Department of Computer Science and Engineering}\\[1.5cm]
+
+% Institute
+{\Large\bfseries National Institute of Technology Goa}\\[0.3cm]
+{\Large Farmagudi, Ponda, Goa - 403401}\\[1cm]
+
+% Year
+{\Large 2025}
+
+\vfill
+
+\end{titlepage}
+
+% Certificate page
+\newpage
+\thispagestyle{empty}
+\begin{center}
+{\LARGE\bfseries CERTIFICATE}\\[2cm]
+\end{center}
+
+This is to certify that the project entitled \textbf{"Fed-Audit-GAN: Achieving Dynamic Contribution Fairness with Generative Auditing in Federated Learning"} submitted by \textbf{Vicky Prasad (22CSE1040)} and \textbf{Shivansh (22CSE1034)} in partial fulfillment of the requirements for the award of the degree of \textbf{Bachelor of Technology in Computer Science and Engineering} at the National Institute of Technology Goa, is a bonafide record of the work carried out by them under my supervision and guidance.
+
+\vspace{2cm}
+
+\noindent\textbf{Dr. Pravati Swain}\\
+Assistant Professor\\
+Department of Computer Science and Engineering\\
+National Institute of Technology Goa\\
+Farmagudi, Ponda, Goa - 403401
+
+\vspace{2cm}
+
+\noindent Date: \rule{3cm}{0.4pt}\\[0.5cm]
+\noindent Place: Goa
+
+% Acknowledgement page
+\newpage
+\thispagestyle{empty}
+\begin{center}
+{\LARGE\bfseries ACKNOWLEDGEMENT}\\[2cm]
+\end{center}
+
+We would like to express our sincere gratitude to all those who have contributed to the successful completion of this major project.
+
+\vspace{0.5cm}
+
+First and foremost, we extend our heartfelt thanks to \textbf{Dr. Pravati Swain}, Assistant Professor, Department of Computer Science and Engineering, for her invaluable guidance, constant encouragement, and unwavering support throughout the duration of this project. Her expertise in machine learning and federated learning has been instrumental in shaping this work, and her insightful feedback has helped us overcome numerous challenges.
+
+\vspace{0.5cm}
+
+We are deeply grateful to \textbf{Prof. [HOD Name]}, Head of the Department of Computer Science and Engineering, for providing the necessary facilities and creating an environment conducive to research and development.
+
+\vspace{0.5cm}
+
+We would like to thank \textbf{National Institute of Technology Goa} for providing us with the opportunity to work on this cutting-edge research project and for offering excellent computational resources and library facilities.
+
+\vspace{0.5cm}
+
+We are thankful to our \textbf{peers and colleagues} who collaborated with us, offered suggestions, and helped in testing various components of our framework during development.
+
+\vspace{0.5cm}
+
+Special thanks to the \textbf{open-source community} for developing and maintaining the frameworks and libraries (PyTorch, NumPy, scikit-learn) that formed the foundation of this project.
+
+\vspace{0.5cm}
+
+Finally, we express our gratitude to our \textbf{families} for their constant support and encouragement throughout our academic journey.
+
+\vspace{2cm}
+
+\noindent\textbf{Vicky Prasad (22CSE1040)}\\
+\noindent\textbf{Shivansh (22CSE1034)}
+
+% Abstract page
+\newpage
+\thispagestyle{empty}
+\begin{center}
+{\LARGE\bfseries ABSTRACT}\\[2cm]
+\end{center}
+
+Federated Learning (FL) has emerged as a paradigm-shifting approach for collaborative machine learning, enabling multiple clients to train a shared global model while maintaining data privacy. However, FL systems face critical challenges including non-IID (non-Independent and Identically Distributed) data distribution, communication overhead, and fairness concerns. Traditional contribution evaluation mechanisms in FL focus primarily on accuracy improvements, failing to recognize clients who provide data that enhances model fairness, particularly for underrepresented groups.
+
+\vspace{0.5cm}
+
+This project presents \textbf{Fed-Audit-GAN}, a novel framework that addresses contribution fairness in federated learning through generative adversarial auditing. Unlike existing approaches that rely on computationally expensive methods such as Shapley value calculation or static public datasets, Fed-Audit-GAN employs a Generative Adversarial Network (GAN) as an intelligent auditor that dynamically generates counterfactual fairness probes to expose model biases.
+
+\vspace{0.5cm}
+
+The framework operates in four phases: (1) standard federated learning round with client updates, (2) generative fairness auditing using an adversarial GAN to create bias-revealing probes, (3) fairness contribution scoring by measuring how each client's update affects model bias on generated probes, and (4) multi-objective incentive distribution combining accuracy and fairness contributions. This approach creates tangible incentives for clients to provide diverse, bias-mitigating data.
+
+\vspace{0.5cm}
+
+We implemented Fed-Audit-GAN using PyTorch and conducted extensive experiments on MNIST and CIFAR-10 datasets under various non-IID settings (Dirichlet distribution with $\alpha = 0.1, 0.3$). Our evaluation focused on three key fairness metrics: Jain's Fairness Index (JFI), performance variance across client groups, and min-max performance gap. Experiments with different gamma hyperparameter values ($\gamma = 0.3, 0.5, 0.7$) revealed that $\gamma = 0.5$ achieves the optimal balance between fairness improvement and convergence stability.
+
+\vspace{0.5cm}
+
+Results demonstrate that Fed-Audit-GAN consistently improves fairness metrics over training rounds, with JFI increasing and performance variance decreasing across all configurations. The framework successfully identifies and rewards clients contributing to bias reduction while maintaining competitive global model accuracy. This work contributes a practical, scalable solution for achieving dynamic contribution fairness in federated learning systems.
+
+\vspace{1cm}
+
+\noindent\textbf{Keywords:} Federated Learning, Generative Adversarial Networks, Fairness, Non-IID Data, Contribution Evaluation, Privacy-Preserving Machine Learning
+
+% Table of contents
+\newpage
+\tableofcontents
+
+% List of Figures
+\newpage
+\listoffigures
+
+% List of Tables
+\newpage
+\listoftables
+
+% ---------------------------------------------------------------------
+\chapter{Introduction}
+
+\section{Background and Motivation}
+
+Federated Learning (FL), introduced by McMahan et al. in 2017, enables collaborative model training across distributed devices without centralizing raw data. Multiple clients (mobile phones, hospitals, IoT devices) collaboratively train a shared global model by performing local computation on private data and sharing only model updates with a central server. This preserves data privacy while leveraging distributed data sources.
+
+\subsection{Key Challenges in Federated Learning}
+
+\textbf{Non-IID Data Distribution}: Data across clients is rarely Independent and Identically Distributed (IID). Data heterogeneity severely impacts model convergence, often leading to 30-40\% accuracy degradation compared to IID settings.
+
+\textbf{Contribution Fairness Problem}: Existing FL frameworks evaluate client contributions based solely on accuracy improvement, failing to recognize clients whose data enhances model fairness by reducing bias against underrepresented groups. This creates perverse incentives where diversity-providing clients are undervalued, potentially causing them to leave the federation and increasing model bias over time.
+
+\section{Research Objectives}
+
+This project addresses the contribution fairness problem through Fed-Audit-GAN, a framework using Generative Adversarial Networks to:
+
+\begin{enumerate}
+    \item Dynamically audit and evaluate client contributions to both accuracy and fairness
+    \item Generate counterfactual fairness probes that expose model biases
+    \item Balance accuracy-based and fairness-based contributions through multi-objective incentive mechanism
+    \item Demonstrate effectiveness on benchmark datasets under non-IID settings
+\end{enumerate}
+
+\section{Key Contributions}
+
+\begin{itemize}
+    \item \textbf{Novel Framework}: First use of GAN-based auditing for fairness evaluation in FL
+    \item \textbf{Four-Phase Protocol}: Systematic approach integrating standard FL with generative fairness auditing
+    \item \textbf{Practical Implementation}: Complete PyTorch implementation with comprehensive evaluation
+    \item \textbf{Experimental Validation}: 23\% JFI improvement, 60\% variance reduction with minimal accuracy cost
+\end{itemize}
+
+\newpage
+
+% ---------------------------------------------------------------------
+\chapter{Literature Review and Background}
+
+\section{Federated Learning Fundamentals}
+
+Federated Learning (FL) enables collaborative model training without centralizing data. A typical FL round:
+\begin{enumerate}
+    \item Server broadcasts global model to selected clients
+    \item Clients train locally on private data
+    \item Clients send model updates to server
+    \item Server aggregates updates (e.g., FedAvg: weighted averaging)
+    \item Process repeats for multiple rounds
+\end{enumerate}
+
+\subsection{Non-IID Data Challenge}
+
+Data across clients exhibits heterogeneity through label distribution skew, feature distribution skew, and quantity differences. We use \textbf{Dirichlet distribution} $Dir(\alpha)$ to model non-IID data, where lower $\alpha$ creates more heterogeneity.
+
+\section{Fairness in Federated Learning}
+
+\subsection{Fairness Definitions}
+
+\textbf{Contribution Fairness}: Fair evaluation and incentivization of client contributions. Traditional FL evaluates contributions solely by accuracy impact, ignoring fairness contributions.
+
+\subsection{Fairness Metrics}
+
+\textbf{Jain's Fairness Index (JFI)}:
+$$JFI = \frac{(\sum_{i=1}^n x_i)^2}{n \sum_{i=1}^n x_i^2}$$
+Ranges from $\frac{1}{n}$ (unfair) to 1 (perfectly fair).
+
+\textbf{Performance Variance}: $\sigma^2 = \frac{1}{n}\sum_{i=1}^n (x_i - \bar{x})^2$
+
+\textbf{Min-Max Gap}: $\text{Gap} = \max_i(x_i) - \min_i(x_i)$
+
+\section{Generative Adversarial Networks}
+
+GANs consist of Generator $G$ (creates synthetic data) and Discriminator $D$ (distinguishes real from fake), trained adversarially. Recent work uses GANs for data augmentation in FL to address non-IID challenges.
+
+\section{Research Gap}
+
+Existing FL frameworks optimize accuracy or fairness separately, not simultaneously. Contribution evaluation fails to recognize fairness-enhancing data. Shapley value-based methods are computationally expensive ($O(2^N)$ complexity). Our Fed-Audit-GAN addresses this gap through efficient GAN-based auditing.
+
+\newpage
+
+% ---------------------------------------------------------------------
+\chapter{Research Progression and Problem Identification}
+
+\section{Weeks 1-4: Initial Exploration and Foundation}
+
+\subsection{Literature Review Findings}
+
+We reviewed papers on:
+\begin{itemize}
+    \item \textbf{FedDDPM}: Uses diffusion models to generate auxiliary data for mitigating non-IID effects
+    \item \textbf{GenAI-Powered Plugin}: Synthesizes data for underrepresented classes
+    \item \textbf{FedHKT}: Hierarchical knowledge transfer using soft labels
+    \item \textbf{Fairness-aware methods}: FairFedCS, FairFed, FedDragon, AdaFedAdam
+\end{itemize}
+
+We implemented FedAvg on CIFAR-10 with Dirichlet-based non-IID partitioning ($\alpha=0.1, 0.3$). Key findings:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Setting} & \textbf{Final Accuracy} & \textbf{Convergence} \\
+\hline
+IID & 97.2\% & Stable \\
+Non-IID ($\alpha=0.3$) & 38.2\% & Unstable \\
+\hline
+\end{tabular}
+\caption{FedAvg Performance: IID vs Non-IID}
+\end{table}
+
+Non-IID settings showed 60\% accuracy degradation, demonstrating the severity of data heterogeneity challenges.
+
+\subsection{Problem Identification}
+
+Through literature review and experiments (Weeks 1-8), we identified the critical gap:
+
+\textbf{Core Problem}: Existing FL frameworks evaluate contributions solely by accuracy impact, ignoring fairness contributions. Clients providing diverse, bias-reducing data are undervalued and may leave the federation, increasing model bias.
+
+\textbf{Existing Limitations}:
+\begin{itemize}
+    \item Shapley value methods: $O(2^N)$ computational complexity
+    \item Static public datasets: storage overhead, inflexible
+    \item No explicit fairness incentives
+\end{itemize}
+
+\newpage
+
+% ---------------------------------------------------------------------
+\chapter{Fed-Audit-GAN: Problem Formulation and Solution Design}
+
+\section{Problem Identification}
+
+Traditional federated learning approaches optimize global model accuracy but overlook contribution fairness. The standard FedAvg algorithm aggregates client models using accuracy-weighted averaging, where clients with higher local test accuracy receive proportionally larger weights in the aggregation. This creates a fundamental problem: \textit{accuracy-based weighting does not reflect true learning contribution}.
+
+\textbf{Key Issues:}
+\begin{itemize}
+    \item High-accuracy clients may have easy, homogeneous data requiring minimal learning
+    \item Low-accuracy clients with challenging, diverse data contribute more valuable knowledge despite lower scores
+    \item Resource-constrained clients (mobile devices, IoT) are systematically marginalized
+    
+    \item \textbf{Contribution Fairness}: Fairly evaluating and rewarding client contributions to model improvement
+    
+    \item \textbf{Group Fairness}: Ensuring model predictions are equitable across demographic or domain-specific groups
+\end{itemize}
+    \item Current aggregation rewards accuracy but ignores fairness contributions
+    \item Standard Shapley value-based contribution measurement requires $O(2^N)$ evaluations—infeasible for large client pools
+\end{itemize}
+
+We define \textbf{contribution fairness} as equitable evaluation and incentivization of client updates based on both accuracy and fairness improvements. This motivates our Fed-Audit-GAN solution.
+
+\section{Proposed Solution: Generative Auditing Framework}
+
+Fed-Audit-GAN uses a GAN-based auditor to efficiently measure fairness contributions by generating targeted fairness probes rather than exhaustive testing.
+
+\textbf{Core Concept}: Instead of evaluating all possible data subsets (Shapley approach), the server's GAN learns to generate synthetic samples specifically designed to expose model biases, enabling efficient fairness scoring.
+
+\subsection{Four-Phase Protocol}
+
+\subsubsection{Phase 1: Standard Federated Learning Round}
+
+Standard FL training:
+
+Consider a federated learning system with:
+\begin{itemize}
+    \item $N$ clients, each with local dataset $\mathcal{D}_i$
+    \item Global model $f_\theta$ parameterized by $\theta$
+    \item Sensitive attribute $s$ (e.g., gender, race, age group)
+    \item Protected groups $\mathcal{G} = \{G_1, G_2, \ldots, G_K\}$ based on $s$
+\end{itemize}
+
+\subsubsection{Traditional Contribution Metric}
+
+Standard FL evaluates client $i$'s contribution as:
+$$C_i^{acc} = \frac{\partial acc_{global}}{\partial \theta_i}$$
+
+where $acc_{global}$ is accuracy on a holdout test set and $\theta_i$ is client $i$'s update.
+
+\subsubsection{Fairness Gap}
+
+Let $acc_k$ denote accuracy on group $G_k$. A fairness-aware contribution should account for:
+$$C_i^{fair} = -\frac{\partial}{\partial \theta_i} \left[\max_k(acc_k) - \min_k(acc_k)\right]$$
+
+That is, how much does client $i$'s update reduce the performance gap between best and worst groups?
+
+\subsubsection{Core Problem}
+
+\textbf{Problem}: Existing FL systems use only $C_i^{acc}$, ignoring $C_i^{fair}$. This creates a misalignment:
+
+\begin{itemize}
+    \item Client with data from majority group: high $C_i^{acc}$, low/negative $C_i^{fair}$
+    \item Client with diverse data: low $C_i^{acc}$, high $C_i^{fair}$
+\end{itemize}
+
+Traditional reward mechanisms incentivize the former, disincentivize the latter, leading to increasing bias over time.
+
+\subsubsection{Computational Challenge}
+
+Even if we want to compute $C_i^{fair}$, it requires:
+\begin{enumerate}
+    \item Knowing group memberships $G_k$ (privacy concern)
+    \item Evaluating model on each group separately (requires labeled test data for each group)
+    \item Computing partial derivatives $\frac{\partial acc_k}{\partial \theta_i}$ for all groups (expensive)
+\end{enumerate}
+
+\subsection{Proposed Solution: Fed-Audit-GAN Framework}
+
+\subsubsection{Core Innovation}
+
+Use a Generative Adversarial Network as an intelligent auditor that:
+\begin{itemize}
+    \item Generates counterfactual fairness probes exposing model bias
+    \item Evaluates fairness contribution efficiently without group labels
+    \item Adapts dynamically to discover evolving biases
+\end{itemize}
+
+\subsubsection{Counterfactual Fairness Probes}
+
+A counterfactual pair $(x, x')$ consists of:
+\begin{itemize}
+    \item $x$ and $x'$ differ only in sensitive attribute $s$
+    \item All task-relevant features remain identical
+    \item Fair model should produce $f_\theta(x) \approx f_\theta(x')$
+\end{itemize}
+
+\textbf{Example}: Two loan applications with identical financial details but different demographic profiles. Fair model assigns similar approval probabilities.
+
+\textbf{Bias Measurement}:
+$$bias(f_\theta) = \mathbb{E}_{(x,x') \sim \mathcal{P}}[|f_\theta(x) - f_\theta(x')|]$$
+
+where $\mathcal{P}$ is distribution of counterfactual pairs.
+
+\subsubsection{Why GANs for Auditing?}
+
+\textbf{Advantages of Adversarial Generation}:
+
+\begin{enumerate}
+    \item \textbf{Targeted Probe Generation}: GAN discriminator learns to identify where model exhibits bias; generator produces samples specifically targeting those vulnerabilities
+    
+    \item \textbf{Adaptive Discovery}: As model improves and biases shift, GAN adapts to find new weaknesses
+    
+    \item \textbf{Efficiency}: Generate probes in $O(1)$ time; single forward pass evaluation
+    
+    \item \textbf{No Group Labels Required}: GAN learns from model's predictions, not ground-truth group memberships
+\end{enumerate}
+
+\subsection{Fed-Audit-GAN Architecture}
+
+\subsubsection{Components}
+
+\textbf{1. Global Model $f_\theta$}: Standard classification/regression model
+
+\textbf{2. Auditor GAN}:
+\begin{itemize}
+    \item Generator $G_\phi$: Maps noise $z$ and base sample $x$ to counterfactual $x' = G_\phi(x, z)$
+    \item Discriminator $D_\psi$: Distinguishes real counterfactuals from generated ones; also evaluates whether $f_\theta$ treats $(x, x')$ differently
+\end{itemize}
+
+\textbf{3. Fairness Scorer}: Module computing bias metrics on generated probes
+
+\textbf{4. Incentive Aggregator}: Combines accuracy and fairness contributions
+
+\subsubsection{Four-Phase Training Protocol}
+
+\textbf{Phase 1: Standard Federated Learning Round}
+
+\begin{algorithm}[H]
+\caption{Phase 1 - Standard FL Round}
+\begin{algorithmic}[1]
+\STATE Server broadcasts global model $f_{\theta^{(t)}}$ to selected clients $S^{(t)}$
+\FOR{each client $i \in S^{(t)}$ in parallel}
+    \STATE Perform local training: $\theta_i^{(t+1)} \leftarrow LocalTrain(f_{\theta^{(t)}}, \mathcal{D}_i)$
+    \STATE Send update $\Delta\theta_i = \theta_i^{(t+1)} - \theta^{(t)}$ to server
+\ENDFOR
+\STATE Store updates $\{\Delta\theta_i\}_{i \in S^{(t)}}$ (do not aggregate yet)
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Phase 2: Generative Fairness Auditing}
+
+\begin{algorithm}[H]
+\caption{Phase 2 - GAN-Based Auditing}
+\begin{algorithmic}[1]
+\STATE Sample base examples $\{x_j\}_{j=1}^M$ from auxiliary dataset
+\FOR{each base example $x_j$}
+    \STATE Generate counterfactual: $x_j' \leftarrow G_\phi(x_j, z_j)$ where $z_j \sim \mathcal{N}(0, I)$
+\ENDFOR
+\STATE $\mathcal{P}^{(t)} \leftarrow \{(x_j, x_j')\}_{j=1}^M$ (probe set)
+\STATE Measure baseline bias: $bias^{(t)} \leftarrow \frac{1}{M}\sum_{j=1}^M |f_{\theta^{(t)}}(x_j) - f_{\theta^{(t)}}(x_j')|$
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Phase 3: Fairness Contribution Scoring}
+
+\begin{algorithm}[H]
+\caption{Phase 3 - Contribution Evaluation}
+\begin{algorithmic}[1]
+\FOR{each client $i \in S^{(t)}$}
+    \STATE Apply hypothetical update: $\tilde{\theta}_i = \theta^{(t)} + \Delta\theta_i$
+    \STATE Measure post-update bias: $bias_i^{(t)} \leftarrow \frac{1}{M}\sum_{j=1}^M |f_{\tilde{\theta}_i}(x_j) - f_{\tilde{\theta}_i}(x_j')|$
+    \STATE Compute fairness contribution: $C_i^{fair} \leftarrow bias^{(t)} - bias_i^{(t)}$
+    \STATE (Positive $C_i^{fair}$ means client $i$ reduces bias)
+    \STATE Compute accuracy contribution: $C_i^{acc} \leftarrow acc(\tilde{\theta}_i) - acc(\theta^{(t)})$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Phase 4: Multi-Objective Incentive Distribution}
+
+\begin{algorithm}[H]
+\caption{Phase 4 - Fairness-Aware Aggregation}
+\begin{algorithmic}[1]
+\STATE Normalize contributions:
+$$\bar{C}_i^{acc} = \frac{C_i^{acc}}{\max_j |C_j^{acc}|}, \quad \bar{C}_i^{fair} = \frac{C_i^{fair}}{\max_j |C_j^{fair}|}$$
+\STATE Compute combined score: $C_i^{total} = (1-\gamma) \bar{C}_i^{acc} + \gamma \bar{C}_i^{fair}$
+\STATE Compute aggregation weights: $w_i = \frac{\exp(C_i^{total})}{\sum_{j \in S^{(t)}} \exp(C_j^{total})}$
+\STATE Aggregate updates: $\theta^{(t+1)} = \theta^{(t)} + \sum_{i \in S^{(t)}} w_i \Delta\theta_i$
+\STATE Distribute rewards $R_i \propto C_i^{total}$ to clients
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Hyperparameter $\gamma$: Fairness-Accuracy Trade-off}
+
+The parameter $\gamma \in [0, 1]$ controls the balance:
+
+\begin{itemize}
+    \item $\gamma = 0$: Pure accuracy-based contribution (traditional FL)
+    \item $\gamma = 1$: Pure fairness-based contribution
+    \item $\gamma = 0.5$: Equal weight to accuracy and fairness
+\end{itemize}
+
+\textbf{Practical Guidance}:
+\begin{itemize}
+    \item Start with $\gamma = 0.3$ to gradually introduce fairness
+    \item Increase $\gamma$ over rounds as model stabilizes
+    \item Domain-specific: medical applications may use higher $\gamma$ (0.6-0.8)
+\end{itemize}
+
+\subsection{Auditor GAN Training}
+
+The auditor GAN is trained to maximize its ability to expose bias:
+
+\subsubsection{Generator Objective}
+
+$$\min_{\phi} \mathbb{E}_{x, z}[\|G_\phi(x, z) - x\|_2^2] + \lambda \mathbb{E}_{x,z}[|f_\theta(x) - f_\theta(G_\phi(x, z))|]$$
+
+\textbf{First term}: Ensures $G_\phi(x, z)$ resembles $x$ (counterfactual constraint)
+
+\textbf{Second term}: Encourages generation of samples causing different predictions (bias revelation)
+
+\subsubsection{Discriminator Objective}
+
+$$\min_{\psi} -\mathbb{E}_{(x,x')\sim\mathcal{D}_{real}}[\log D_\psi(x, x')] - \mathbb{E}_{x,z}[\log(1 - D_\psi(x, G_\phi(x,z)))]$$
+
+Standard GAN objective ensuring generated counterfactuals are realistic.
+
+\subsubsection{Adversarial Training Loop}
+
+\begin{algorithm}[H]
+\caption{Auditor GAN Training}
+\begin{algorithmic}[1]
+\FOR{each GAN training iteration}
+    \STATE Sample minibatch $\{x_i\}_{i=1}^B$
+    \STATE Generate counterfactuals $\{x_i'\}$ where $x_i' = G_\phi(x_i, z_i)$
+    \STATE Update discriminator: $\psi \leftarrow \psi - \alpha \nabla_\psi \mathcal{L}_D(\psi)$
+    \STATE Update generator: $\phi \leftarrow \phi - \alpha \nabla_\phi \mathcal{L}_G(\phi)$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Theoretical Properties}
+
+\subsubsection{Convergence Guarantee}
+
+Under standard FL assumptions (bounded gradients, Lipschitz loss), Fed-Audit-GAN maintains convergence:
+
+\textbf{Theorem (Informal)}: If fairness contributions are bounded $|C_i^{fair}| \leq C_{max}$, then:
+$$\mathbb{E}[\|\nabla F(\theta^{(T)})\|^2] \leq O\left(\frac{1}{\sqrt{T}}\right) + O(\gamma C_{max})$$
+
+\textbf{Interpretation}: Convergence rate matches standard FedAvg up to a fairness term proportional to $\gamma$.
+
+\subsubsection{Fairness Improvement}
+
+\textbf{Lemma}: If at least one client $i^*$ has $C_{i^*}^{fair} > 0$ in each round, then expected bias decreases:
+$$\mathbb{E}[bias^{(t+1)}] \leq bias^{(t)} - \gamma \cdot \min_i C_i^{fair}$$
+
+\section{Week 10: Implementation Planning}
+
+\subsection{Development Environment Setup Challenges}
+
+This week, we encountered significant technical challenges in establishing our development environment—a critical prerequisite for implementation.
+
+\subsubsection{Initial Approach: Miniconda}
+
+We attempted to set up the environment using Miniconda 23.10.0 with Python 3.10.
+
+\textbf{Required Dependencies}:
+\begin{itemize}
+    \item PyTorch 2.1.0 (with CUDA 11.8 support)
+    \item NumPy 1.24.3
+    \item Pandas 2.0.3
+    \item scikit-learn 1.3.0
+    \item Matplotlib, seaborn for visualization
+\end{itemize}
+
+\subsubsection{Encountered Issues}
+
+\textbf{1. Package Dependency Conflicts}:
+
+PyTorch 2.1.0 with CUDA 11.8 required NumPy $\leq$ 1.24, but other packages (Pandas 2.0) required NumPy $\geq$ 1.24.3. Conda's dependency resolver failed to find compatible versions.
+
+\begin{verbatim}
+$ conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch
+Solving environment: failed with initial frozen solve. 
+Retrying with flexible solve.
+PackagesNotFoundError: The following packages are not available:
+- pytorch[version='2.1.0,cuda=11.8']
+\end{verbatim}
+
+\textbf{2. CUDA Version Conflicts}:
+
+System had CUDA 12.1 installed, but Conda provided CUDA 11.8. Environment variables pointed to system CUDA, causing PyTorch to fail GPU detection:
+
+\begin{verbatim}
+>>> import torch
+>>> torch.cuda.is_available()
+False
+>>> torch.version.cuda
+'11.8'  # Mismatch with system CUDA 12.1
+\end{verbatim}
+
+\textbf{3. Environment Activation Issues}:
+
+Packages appeared in `conda list` but were not importable in Python, suggesting site-packages path misconfiguration.
+
+\textbf{4. Build Tool Dependencies}:
+
+GAN-specific libraries (torch-fidelity, for evaluating generated sample quality) required C++ build tools not available in the base Conda environment.
+
+\subsubsection{Troubleshooting Attempts}
+
+\begin{enumerate}
+    \item \textbf{Environment Recreation}: Deleted and recreated environment multiple times
+    \item \textbf{Channel Prioritization}: Tried conda-forge, defaults channels
+    \item \textbf{Pip Fallback}: Attempted pip installation within Conda env (created further conflicts)
+    \item \textbf{Manual CUDA Setup}: Adjusted PATH and LD\_LIBRARY\_PATH (temporary fixes, not persistent)
+    \item \textbf{Docker Exploration}: Considered containerization but lacked expertise for quick implementation
+\end{enumerate}
+
+None resolved the issues comprehensively. After 3 days, we concluded Conda's complexity was hindering progress.
+
+\subsection{Revised Strategy}
+
+Dr. Swain recommended two alternative approaches:
+
+\subsubsection{Approach 1: Python venv with pip}
+
+Abandon Conda; use Python's built-in virtual environment:
+
+\begin{verbatim}
+python -m venv fed_audit_gan_env
+source fed_audit_gan_env/bin/activate  # Linux/Mac
+fed_audit_gan_env\Scripts\activate.bat  # Windows
+
+pip install torch torchvision torchaudio --index-url \
+    https://download.pytorch.org/whl/cu118
+pip install numpy pandas scikit-learn matplotlib seaborn
+\end{verbatim}
+
+\textbf{Advantages}:
+\begin{itemize}
+    \item Simpler dependency resolution via pip
+    \item Direct control over package versions
+    \item Fewer abstraction layers (easier debugging)
+\end{itemize}
+
+\subsubsection{Approach 2: Google Colab}
+
+Use cloud-based Jupyter notebooks with pre-configured environments:
+
+\textbf{Advantages}:
+\begin{itemize}
+    \item Free GPU access (Tesla T4, 15GB VRAM)
+    \item PyTorch, CUDA pre-installed and tested
+    \item No local setup headaches
+    \item Easy sharing and collaboration
+\end{itemize}
+
+\textbf{Disadvantages}:
+\begin{itemize}
+    \item Session time limits (12 hours)
+    \item Internet dependency
+    \item Limited to notebook-style development
+\end{itemize}
+
+\subsection{Parallel Preparatory Work}
+
+While addressing environment issues, we progressed on conceptual fronts:
+
+\subsubsection{Architectural Pseudocode}
+
+Drafted detailed pseudocode for each component:
+
+\begin{itemize}
+    \item \texttt{FedServer}: Coordinates rounds, maintains global model
+    \item \texttt{FedClient}: Performs local training, computes updates
+    \item \texttt{AuditorGAN}: Generator and discriminator networks
+    \item \texttt{FairnessScorer}: Evaluates bias on probe sets
+    \item \texttt{IncentiveAggregator}: Computes combined contributions
+\end{itemize}
+
+\subsubsection{Dataset Preparation}
+
+Downloaded and examined datasets:
+
+\textbf{MNIST}:
+\begin{itemize}
+    \item 60,000 training images, 10,000 test images
+    \item Grayscale 28×28 pixels, 10 digit classes
+    \item Well-understood baseline for FL experiments
+\end{itemize}
+
+\textbf{CIFAR-10}:
+\begin{itemize}
+    \item 50,000 training images, 10,000 test images
+    \item RGB 32×32 pixels, 10 object classes
+    \item More complex; better evaluation of fairness mechanisms
+\end{itemize}
+
+\textbf{Data Partitioning Strategy}:
+
+Implemented Dirichlet-based non-IID partitioning with controllable $\alpha$:
+\begin{itemize}
+    \item $\alpha = 0.1$: Extreme heterogeneity (each client sees 1-2 classes predominantly)
+    \item $\alpha = 0.5$: Moderate heterogeneity
+    \item $\alpha = 10$: Near-IID distribution
+\end{itemize}
+
+\subsubsection{Fairness Metrics Implementation}
+
+Coded functions for three primary fairness metrics:
+
+\begin{lstlisting}[language=Python, caption=Fairness Metrics Implementation]
+def jains_fairness_index(accuracies):
+    """
+    Jain's Fairness Index: (sum x_i)^2 / (n * sum x_i^2)
+    Returns value in [1/n, 1], where 1 is perfectly fair.
+    """
+    n = len(accuracies)
+    sum_acc = sum(accuracies)
+    sum_sq_acc = sum(x**2 for x in accuracies)
+    return (sum_acc ** 2) / (n * sum_sq_acc) if sum_sq_acc > 0 else 0
+
+def performance_variance(accuracies):
+    """Standard deviation of accuracies."""
+    return np.std(accuracies)
+
+def min_max_gap(accuracies):
+    """Difference between best and worst performing groups."""
+    return max(accuracies) - min(accuracies)
+\end{lstlisting}
+
+\subsection{Week 10 Outcomes}
+
+By week's end:
+\begin{itemize}
+    \item Environment setup issues identified; alternative strategies defined
+    \item Architectural design completed with detailed pseudocode
+    \item Datasets prepared with non-IID partitioning
+    \item Fairness metrics implemented and tested
+    \item Ready to begin actual coding once environment stabilizes
+\end{itemize}
+
+\newpage
+
+% ---------------------------------------------------------------------
+\chapter{Implementation}
+
+\section{System Architecture}
+
+Fed-Audit-GAN was implemented in PyTorch 2.1.0 with CUDA 11.8 support. The codebase follows a modular architecture:
+
+\begin{itemize}
+    \item \textbf{Data Module}: MNIST/CIFAR-10 loaders with Dirichlet non-IID sampling
+    \item \textbf{Models Module}: CNN architectures for classification tasks
+    \item \textbf{Auditor Module}: GAN generator/discriminator, fairness metrics (JFI, variance, min-max gap), contribution scoring
+    \item \textbf{Main Script}: Orchestrates four-phase Fed-Audit-GAN protocol
+\end{itemize}
+
+\section{Key Technical Components}
+
+\subsection{Dirichlet Non-IID Sampling}
+
+Implemented Dirichlet distribution-based data partitioning where parameter $\alpha$ controls heterogeneity. Lower $\alpha$ creates more skewed distributions (more non-IID). For each class, samples are distributed across clients proportional to Dirichlet-sampled proportions.
+
+\subsection{Component Summary}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|p{10cm}|}
+\hline
+\textbf{Component} & \textbf{Implementation Details} \\
+\hline
+CNN Model & 2 conv blocks (32, 64 filters), max pooling, dropout (0.25), FC layers (128, n_classes). Handles MNIST (1-channel, 28×28) and CIFAR-10 (3-channel, 32×32) \\
+\hline
+Data Sampling & Dirichlet-based non-IID partitioning with configurable $\alpha$ parameter \\
+\hline
+FL Training & Client-side SGD (5 local epochs, batch=64, lr=0.01), FedAvg aggregation \\
+\hline
+Auditor GAN & Generator: encoder-decoder with noise injection for counterfactual generation. Discriminator: classifies real vs fake pairs and bias detection \\
+\hline
+Fairness Metrics & Jain's Fairness Index (JFI), performance variance, min-max gap across clients \\
+\hline
+Scoring & Measures bias reduction per client: $C_i^{fair} = bias^{(t)} - bias_i^{(t)}$ \\
+\hline
+Aggregation & Weighted by combined score: $C_i^{total} = (1-\gamma) C_i^{acc} + \gamma C_i^{fair}$ \\
+\hline
+\end{tabular}
+\caption{Fed-Audit-GAN Implementation Components}
+\end{table}
+
+\subsection{Testing and Validation}
+
+Comprehensive unit tests verified:
+\begin{itemize}
+    \item Dirichlet sampling produces correct client data distributions
+    \item JFI computation matches theoretical values
+    \item Bias measurement accurately detects model disparities
+    \item End-to-end FL workflow executes without errors
+\end{itemize}
+
+All pytest tests passed successfully, validating core functionality before full-scale experiments.
+
+\section{Week 11 Outcomes}
+
+By end of Week 11, we had:
+\begin{itemize}
+    \item Stable development environment with GPU support
+    \item Complete modular codebase with 2000+ lines of Python
+    \item All core components implemented and unit-tested
+    \item Data partitioning with flexible non-IID control
+    \item Fairness metrics implementation verified
+    \item Ready for full-scale experiments in Week 12
+\end{itemize}
+
+\newpage
+
+% --------------------------------------------------------------------- 
+\chapter{Experimental Evaluation (Week 12)}
+
+\section{Research Questions}
+
+Our experimental evaluation aimed to answer:
+
+\begin{enumerate}
+    \item \textbf{RQ1: Fairness Improvement}: Does Fed-Audit-GAN improve fairness metrics compared to standard FedAvg?
+    
+    \item \textbf{RQ2: Hyperparameter Sensitivity}: How does gamma ($\gamma$) affect the fairness-accuracy trade-off?
+    
+    \item \textbf{RQ3: Scalability}: Does the approach work across different datasets and non-IID levels?
+\end{enumerate}
+
+\section{Experimental Setup}
+
+\subsection{Datasets}
+
+\textbf{MNIST}: 60k training / 10k test samples, 10 classes, 28×28 grayscale. Non-IID partitioning with Dirichlet $\alpha = 0.3$.
+
+\textbf{CIFAR-10}: 50k training / 10k test samples, 10 classes (airplane, automobile, bird, etc.), 32×32 RGB. Dirichlet $\alpha = 0.1$ for higher heterogeneity.
+
+\subsection{FL Configuration}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Parameter} & \textbf{Value} \\
+\hline
+Number of clients & 100 \\
+Clients per round & 10 (10\% participation) \\
+Total rounds & 50 \\
+Local epochs & 5 \\
+Batch size & 64 \\
+Learning rate & 0.01 \\
+Optimizer & SGD with momentum=0.9 \\
+\hline
+\end{tabular}
+\caption{Federated Learning Parameters}
+\end{table}
+
+\subsection{Gamma Sweep Experiments}
+
+We evaluated Fed-Audit-GAN with three gamma values:
+\begin{itemize}
+    \item $\gamma = 0.3$: Low fairness weight (70\% accuracy, 30\% fairness)
+    \item $\gamma = 0.5$: Balanced (50\% accuracy, 50\% fairness)
+    \item $\gamma = 0.7$: High fairness weight (30\% accuracy, 70\% fairness)
+\end{itemize}
+
+Baseline: Standard FedAvg ($\gamma = 0$, pure accuracy-based).
+
+\section{Results and Analysis}
+
+\subsection{Fairness Metrics Evolution}
+
+\textbf{Key Finding}: Fed-Audit-GAN consistently improved fairness across all gamma values.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Method} & \textbf{JFI} & \textbf{Variance} & \textbf{Min-Max Gap} \\
+\hline
+FedAvg & 0.72 & 0.045 & 0.31 \\
+Fed-Audit ($\gamma=0.3$) & 0.82 & 0.028 & 0.22 \\
+Fed-Audit ($\gamma=0.5$) & \textbf{0.89} & \textbf{0.018} & \textbf{0.15} \\
+Fed-Audit ($\gamma=0.7$) & 0.91 & 0.015 & 0.13 \\
+\hline
+\end{tabular}
+\caption{Fairness Metrics After 50 Rounds (MNIST, $\alpha=0.3$)}
+\end{table}
+
+\textbf{Improvements with $\gamma=0.5$}:
+\begin{itemize}
+    \item JFI: +23\% improvement over FedAvg
+    \item Variance: -60\% reduction
+    \item Min-max gap: -52\% reduction
+\end{itemize}
+
+\subsection{Accuracy vs Fairness Trade-off}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Method} & \textbf{Global Accuracy} & \textbf{JFI} \\
+\hline
+FedAvg & 98.2\% & 0.72 \\
+Fed-Audit ($\gamma=0.3$) & 97.8\% & 0.82 \\
+Fed-Audit ($\gamma=0.5$) & 97.1\% & 0.89 \\
+Fed-Audit ($\gamma=0.7$) & 96.3\% & 0.91 \\
+\hline
+\end{tabular}
+\caption{Accuracy vs Fairness Trade-off (MNIST)}
+\end{table}
+
+\textbf{Analysis}: $\gamma=0.5$ achieves best balance - significant fairness gain (23\% JFI improvement) with minimal accuracy cost (-1.1\% accuracy).
+
+\subsection{Per-Client Performance Distribution}
+
+Fed-Audit-GAN reduced performance disparity across clients. For MNIST with $\gamma=0.5$:
+\begin{itemize}
+    \item Lowest-performing client: 94.2\% accuracy (vs 87.5\% in FedAvg)
+    \item Highest-performing client: 98.9\% accuracy (vs 99.1\% in FedAvg)
+    \item Standard deviation: 1.3\% (vs 3.2\% in FedAvg)
+\end{itemize}
+
+\textbf{Insight}: Fairness auditing successfully identifies and rewards clients contributing diverse knowledge, lifting performance of disadvantaged clients without significantly penalizing high-performers.
+
+\subsection{Convergence Stability}
+
+Fed-Audit-GAN maintained stable convergence:
+\begin{itemize}
+    \item JFI monotonically increased over rounds (no oscillations)
+    \item Global accuracy stabilized after round 30
+    \item No client dropout or divergence observed
+\end{itemize}
+
+\subsection{CIFAR-10 Results}
+
+Results on CIFAR-10 ($\alpha=0.1$, higher heterogeneity) confirmed findings:
+\begin{itemize}
+    \item JFI improvement: +19\% with $\gamma=0.5$
+    \item Variance reduction: -54\%
+    \item Accuracy cost: -1.8\% (from 76.4\% to 74.6\%)
+\end{itemize}
+
+\textbf{Conclusion}: Approach generalizes across datasets and heterogeneity levels.
+
+\section{Key Insights}
+
+\begin{enumerate}
+    \item \textbf{GAN-based auditing is effective}: Generative fairness probes successfully expose model biases without requiring group labels or exhaustive testing
+    
+    \item \textbf{Optimal gamma around 0.5}: Balanced fairness-accuracy weight achieves best practical outcomes
+    
+    \item \textbf{Scalability}: Method works across MNIST/CIFAR-10 and different non-IID levels
+    
+    \item \textbf{Minimal overhead}: GAN probe generation adds negligible computational cost compared to standard FL training
+\end{enumerate}
+
+\newpage
+
+% ---------------------------------------------------------------------
+\chapter{Conclusion and Future Work}
+
+\section{Summary of Contributions}
+
+This work presented Fed-Audit-GAN, a novel framework addressing contribution fairness in federated learning through GAN-based generative auditing. Key contributions include:
+
+\begin{enumerate}
+    \item \textbf{Problem Formulation}: Identified contribution fairness gap where accuracy-based evaluation systematically undervalues clients with diverse, fairness-enhancing data
+    
+    \item \textbf{Generative Auditing Solution}: Proposed using adversarial generation to create targeted fairness probes, enabling efficient bias measurement without group labels
+    
+    \item \textbf{Four-Phase Protocol}: Designed complete FL workflow integrating standard training, GAN auditing, fairness scoring, and multi-objective aggregation
+    
+    \item \textbf{Practical Implementation}: Developed modular PyTorch implementation with comprehensive testing
+    
+    \item \textbf{Experimental Validation}: Demonstrated 23\% JFI improvement and 60\% variance reduction with minimal (-1.1\%) accuracy cost
+\end{enumerate}
+
+\section{Limitations and Future Directions}
+
+\subsection{Current Limitations}
+
+\begin{itemize}
+    \item \textbf{Synthetic Data Quality}: GAN-generated probes may not perfectly capture real-world fairness concerns
+    \item \textbf{Computational Overhead}: GAN training adds per-round cost (though amortized across clients)
+    \item \textbf{Hyperparameter Tuning}: Gamma selection requires domain knowledge and experimentation
+\end{itemize}
+
+\subsection{Future Work}
+
+\begin{enumerate}
+    \item \textbf{Adaptive Gamma}: Dynamically adjust fairness weight based on current JFI levels
+    
+    \item \textbf{Privacy-Preserving Extensions}: Integrate differential privacy guarantees for probe generation and scoring
+    
+    \item \textbf{Real-World Deployment}: Evaluate on production FL systems with actual privacy constraints
+    
+    \item \textbf{Multi-Attribute Fairness}: Extend beyond single sensitive attribute to intersectional fairness
+    
+    \item \textbf{Theoretical Analysis}: Provide convergence guarantees and fairness bounds for Fed-Audit-GAN
+\end{enumerate}
+
+\section{Concluding Remarks}
+
+Fed-Audit-GAN demonstrates that generative adversarial networks can serve as effective fairness auditors in federated learning, bridging the gap between accuracy optimization and contribution fairness. By efficiently identifying and rewarding clients who reduce model bias, this framework creates sustainable incentives for diverse data participation—a critical requirement for equitable AI systems.
+
+The experimental results validate the practical viability of this approach, showing significant fairness improvements with minimal accuracy cost. As federated learning continues to scale across sensitive domains (healthcare, finance, education), mechanisms like Fed-Audit-GAN will be essential for ensuring that distributed training benefits all participants fairly.
+
+\newpage
+
+% ---------------------------------------------------------------------
+\bibliographystyle{plain}
+\begin{thebibliography}{99}
+
+\bibitem{fedavg}
+H. Brendan McMahan, Eider Moore, Daniel Ramage, Seth Hampson, and Blaise Ag\"{u}era y Arcas.
+\textit{Communication-Efficient Learning of Deep Networks from Decentralized Data}.
+AISTATS, 2017.
+
+\bibitem{goodfellow2014gan}
+Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio.
+\textit{Generative Adversarial Networks}.
+NeurIPS, 2014.
+
+\bibitem{li2020federated}
+Tian Li, Anit Kumar Sahu, Manzil Zaheer, Maziar Sanjabi, Ameet Talwalkar, and Virginia Smith.
+\textit{Federated Optimization in Heterogeneous Networks}.
+MLSys, 2020.
+
+\bibitem{jain1984fairness}
+Raj Jain, Dah-Ming Chiu, and Will Hawe.
+\textit{A Quantitative Measure of Fairness and Discrimination for Resource Allocation in Shared Computer Systems}.
+DEC Research Report TR-301, 1984.
+
+\bibitem{mohri2019agnostic}
+Mehryar Mohri, Gary Sivek, and Ananda Theertha Suresh.
+\textit{Agnostic Federated Learning}.
+ICML, 2019.
+
+\end{thebibliography}
+
+\end{document}
